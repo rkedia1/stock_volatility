@@ -1,7 +1,7 @@
 # Predicting Equity Volatilty using Sentiment and Technical Analysis
 
 ## To set up a basic environment it should be pretty simple
-## Run "__main__.py", which calls EquityData from data.py to check if the database exists and the needed files are there.
+## Run '__main__.py' (two underscores there, btw, not just main.py which is empty), which calls EquityData from data.py to check if the database exists and the needed files are there.
 ##### Made some of the instances relative imports to reduce project dependencies
 
 
