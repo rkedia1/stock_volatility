@@ -160,6 +160,9 @@ cython_debug/
 #.idea/
 equities/.DS_Store
 
+.DS_Store
+.vscode/settings.json
+
 
 -------------------
 #reddit_stuff
@@ -169,5 +172,4 @@ REDDIT_CLIENT_SECRET=emQOKlPN7y0aeRFwZFUBKB-WmUAsnw
 REDDIT_USER_AGENT=Stock Sentiment API
 REDDIT_USERNAME=shudderisland098
 REDDIT_PASSWORD=sjikpnex973
-.DS_Store
-.vscode/settings.json
+
