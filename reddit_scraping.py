@@ -5,13 +5,17 @@
 
 
 import praw
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Reddit instance
-client_id = '_LYqCAq2rTb85eEHMeiOzQ'
-client_secret = "emQOKlPN7y0aeRFwZFUBKB-WmUAsnw"
-user_agent = "Stock Sentiment API"
-username = "shudderisland098"
-password = "sjikpnex973"
+client_id = os.getenv("REDDIT_CLIENT_ID")
+client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+user_agent = os.getenv("REDDIT_USER_AGENT")
+username = os.getenv("REDDIT_USERNAME")
+password = os.getenv("REDDIT_PASSWORD")
 
 reddit = praw.Reddit(
     client_id=client_id,
