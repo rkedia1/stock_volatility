@@ -6,12 +6,10 @@ import pandas as pd
 
 # from date.relativedelta import realativedelta
 import requests
-import csv
 import os
 from tqdm import tqdm
 import sqlite3
 from snscrape.modules.twitter import TwitterSearchScraper, TwitterSearchScraperMode
-import csv
 import re
 from datetime import datetime, date, time, timedelta
 from yfinance import download as ydownload
