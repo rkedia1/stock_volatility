@@ -10,10 +10,13 @@ import csv
 import os
 from tqdm import tqdm
 import sqlite3
-import json
-
+from snscrape.modules.twitter import TwitterSearchScraper, TwitterSearchScraperMode
+import csv
+import re
+from datetime import datetime, date, time, timedelta
 from yfinance import download as ydownload
 import yfinance as yf
+import logging
 
 import warnings
 
@@ -75,7 +78,7 @@ class Equities(object):
                     data = stock.info
                     data["Symbol"] = ticker
                     # .append to be depricated; but still going to use it
-                    dataset = dataset.append(pd.DataFrame([data], index=[ticker]))
+                    dataset = pd.concat([dataset, pd.DataFrame([data])])
 
                     # constantly writing as it is not exhaustive and in the cause of failure
                     dataset.to_csv("equities/all_stocks.csv")
@@ -137,7 +140,7 @@ class EquityData(Equities):
         for stock in self.consumer_stocks:
             try:
                 table_name = f"{stock}_{interval.lower()}"
-                query = f"SELECT * FROM {table_name}"
+                query = f"SELECT * FROM [{table_name}]"
                 with sqlite3.connect(self.db_name) as conn:
                     df = pd.read_sql(query, con=conn)
                     dataset[stock] = df
@@ -151,7 +154,7 @@ class EquityData(Equities):
             disc = pd.read_csv("equities/discretionary.csv")
             staples = pd.read_csv("equities/staples.csv")
             # again I will use .append to the end
-            stocks = disc.append(staples)["Symbol"].to_numpy()
+            stocks = pd.concat([disc, staples])["Symbol"].to_numpy()
             self._consumer_stocks = stocks
 
         return self._consumer_stocks
@@ -270,6 +273,117 @@ class SeekingAlpha(object):
         else:
             dataset = pd.read_csv(path)
         return dataset
+
+
+class TwitterScrape(object):
+    # TODO: Date range, period, and symbols
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def convert_to_float(x):
+        if type(x) == float or type(x) == int:
+            return x
+        return float(x.replace("M", "")) * 1000000
+
+    def _scrape_tweets(
+        self,
+        symbol: str,
+        path: str = "tweets",
+        since: date = date(2021, 6, 5),
+        end: date = date.today(),
+        days: int = 7,
+        links: bool = False,
+        replies: bool = False,
+    ):
+        logging.disable(
+            logging.CRITICAL
+        )  # suppress common errors outputted by snscrape
+        with open(f"{path}/{symbol}.csv", "w") as f:
+            f.write("time,rawContent\n")
+        delta = timedelta(days=days)
+        until = since + delta
+        search_str = "${symbol} lang:en since:{since} until:{until}"
+        search_str += " -filter:links" if not links else ""
+        search_str += " -filter:replies" if not replies else ""
+        while since <= end:
+            print(
+                f"Scraping ${symbol}: {since.strftime('%Y-%m-%d')} to {until.strftime('%Y-%m-%d')}",
+                end="\r",
+            )
+            scraper = TwitterSearchScraper(
+                search_str.format(
+                    symbol=symbol,
+                    since=since.strftime("%Y-%m-%d"),
+                    until=until.strftime("%Y-%m-%d"),
+                ),
+                mode=TwitterSearchScraperMode.TOP,
+            )
+            result = pd.DataFrame(
+                [[i.date, i.rawContent] for i in scraper.get_items()],
+                columns=["date", "rawContent"],
+            ).dropna()
+            current_min = pd.to_datetime(result["date"]).min()
+            while current_min.date() > since:
+                new_until = (current_min + timedelta(days=1)).date()
+                print(
+                    f"Scraping ${symbol}: {since.strftime('%Y-%m-%d')} to {new_until.strftime('%Y-%m-%d')}",
+                    end="\r",
+                )
+                scraper = TwitterSearchScraper(
+                    search_str.format(
+                        symbol=symbol,
+                        since=since.strftime("%Y-%m-%d"),
+                        until=new_until.strftime("%Y-%m-%d"),
+                    ),
+                    mode=TwitterSearchScraperMode.TOP,
+                )
+                result = pd.concat(
+                    [
+                        result,
+                        pd.DataFrame(
+                            [[i.date, i.rawContent] for i in scraper.get_items()],
+                            columns=["date", "rawContent"],
+                        ),
+                    ]
+                ).dropna()
+                if pd.to_datetime(result["date"]).min() == current_min:
+                    break
+                current_min = pd.to_datetime(result["date"]).min()
+            result = result[["date", "rawContent"]].drop_duplicates()
+            result["date"] = pd.to_datetime(result["date"])
+            result["rawContent"] = result["rawContent"].str.replace(
+                r"\r+|\n+|\t+", " ", regex=True
+            )
+            result.sort_values(by="date").to_csv(
+                f"{path}/{symbol}.csv", mode="a", index=False, header=False
+            )
+            since += delta
+            until += delta
+        logging.disable(logging.NOTSET)  # turn logging back on
+
+    def twitter_data(self, symbols: list):
+        if not os.path.exists("tweets"):
+            os.makedirs("tweets")
+        for symbol in symbols:
+            # TODO: Check date range
+            if not os.path.isfile(f"tweets/{symbol}.csv"):
+                self._scrape_tweets(symbol)
+        tweets = pd.DataFrame()
+        for symbol in symbols:
+            data = pd.read_csv(f"tweets/{symbol}.csv")
+            data["symbol"] = symbol
+            tweets = pd.concat([tweets, data])
+        return tweets
+
+    def get_tweets(self, number: int = 100, symbols: list = []):
+        # if len(symbols) == 0:
+        #     symbols = pd.concat([pd.read_csv("equities/discretionary.csv"), pd.read_csv("equities/staples.csv")])
+        #     symbols = symbols[~symbols['Symbol'].str.contains("/")]
+        #     symbols['Market Cap'] = symbols['Market Cap'].str.replace(',', '').apply(self.convert_to_float)
+        #     symbols = symbols.sort_values(by='Market Cap', ascending=False)['Symbol'].to_list()[:number]
+        # self.twitter_data(symbols=symbols)
+        self.twitter_data(symbols=["QQQ"])
 
 
 if __name__ == "__main__":
