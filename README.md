@@ -9,5 +9,5 @@
 ###### eg. from data import EquityData
 ### EquityData().stock_data(self, interval: str = '1h') -> pd.DataFrame:
 
-### Must install latest developmental version of snscrape for Twitter scraper to work properly
-###### eg. pip3 install git+https://github.com/JustAnotherArchivist/snscrape.git
+# Must install latest developmental version of snscrape for Twitter scraper to work properly
+### eg. pip3 install git+https://github.com/JustAnotherArchivist/snscrape.git
