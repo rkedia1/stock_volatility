@@ -273,104 +273,153 @@ class SeekingAlpha(object):
         return dataset
 
 
-class TwitterScrape(object):
+class TwitterData(object):
     # TODO: Date range, period, and symbols
-    def __init__(self):
+    def __init__(
+        self, start: date = date(2021, 6, 1), end: date = date.today(), period: int = 7
+    ):
+        # Sets time period (date range length for each search), start date, and end date
+        self.start_date = start
+        self.end_date = end
+        self.delta = timedelta(days=period)
         pass
 
     @staticmethod
-    def convert_to_float(x):
+    def convert_m_to_float(x):
         if type(x) == float or type(x) == int:
             return x
         return float(x.replace("M", "")) * 1000000
 
-    def _scrape_tweets(
+    def _sns_wrapper(self, symbol: str, since: date, until: date):
+        """
+        Retrieves top tweets (according to Twitter) for a given date range with
+        the specified symbol's cashtag. The specific tweets retrieved can vary
+        due to different date ranges.
+        Uses the TwitterSearchScraper from snscrape to retrieve Tweets.
+        https://github.com/JustAnotherArchivist/snscrape
+        Returns tweets in a dataframe with two columns: ["date", "rawContent"]
+        """
+        print(
+            f"Harvesting ${symbol}: {since.strftime('%Y-%m-%d')} to {until.strftime('%Y-%m-%d')}",
+            end="\r",
+        )
+        # Assemble Twitter-friendly search string, with some constraints to reduce overall number of tweets
+        search_str = f"${symbol} lang:en since:{since.strftime('%Y-%m-%d')} until:{since.strftime('%Y-%m-%d')} -filter:links -filter:replies"
+        snstweet = TwitterSearchScraper(
+            search_str,
+            mode=TwitterSearchScraperMode.TOP,
+        )
+        # Tweet timestamps and contents are retrieved through a generator and stored in a DataFrame
+        result = pd.DataFrame(
+            [[tweet.date, tweet.rawContent] for tweet in snstweet.get_items()],
+            columns=["date", "rawContent"],
+        )
+        return result
+
+    def _harvest_cashtag(
         self,
         symbol: str,
-        path: str = "tweets",
-        since: date = date(2021, 6, 5),
-        end: date = date.today(),
-        days: int = 7,
-        links: bool = False,
-        replies: bool = False,
     ):
-        logging.disable(
-            logging.CRITICAL
-        )  # suppress common errors outputted by snscrape
-        with open(f"{path}/{symbol}.csv", "w") as f:
+        """
+        Harvests tweets for the pre-specified date range of a given symbol.
+        """
+        # Turn off logging to suppress snscrape output
+        logging.disable(logging.CRITICAL)
+        # Create empty .csv with headers for our symbol
+        with open(f"tweets/{symbol}.csv", "w") as f:
             f.write("time,rawContent\n")
-        delta = timedelta(days=days)
-        until = since + delta
-        search_str = "${symbol} lang:en since:{since} until:{until}"
-        search_str += " -filter:links" if not links else ""
-        search_str += " -filter:replies" if not replies else ""
-        while since <= end:
-            print(
-                f"Scraping ${symbol}: {since.strftime('%Y-%m-%d')} to {until.strftime('%Y-%m-%d')}",
-                end="\r",
-            )
-            scraper = TwitterSearchScraper(
-                search_str.format(
-                    symbol=symbol,
-                    since=since.strftime("%Y-%m-%d"),
-                    until=until.strftime("%Y-%m-%d"),
-                ),
-                mode=TwitterSearchScraperMode.TOP,
-            )
-            result = pd.DataFrame(
-                [[i.date, i.rawContent] for i in scraper.get_items()],
-                columns=["date", "rawContent"],
-            )
+        since = self.start_date
+        until = since + self.delta
+        # Run `self.delta`-ly search for top tweets in specified time range
+        while since <= self.end_date:
+            result = self._sns_wrapper(symbol, since, until)
             current_min = pd.to_datetime(result["date"]).min()
+            # Check if any tweets are missing by comparing earliest date in
+            # `results` with our specified `since` date.
+            # Twitter search returns tweets in descending order of timestamp,
+            # so only the beginning of the date range needs to be checked.
             try:
+                # While the earliest date does not match the specified `since` date,
+                # run a search with a shortened time range (same `since`, earlier `until`)
+                # to retrieve missing tweets (if there are any).
                 while current_min.date() > since:
-                    new_until = (current_min + timedelta(days=1)).date()
-                    print(
-                        f"Scraping ${symbol}: {since.strftime('%Y-%m-%d')} to {new_until.strftime('%Y-%m-%d')}",
-                        end="\r",
-                    )
-                    scraper = TwitterSearchScraper(
-                        search_str.format(
-                            symbol=symbol,
-                            since=since.strftime("%Y-%m-%d"),
-                            until=new_until.strftime("%Y-%m-%d"),
-                        ),
-                        mode=TwitterSearchScraperMode.TOP,
-                    )
+                    decreased_until = (current_min + timedelta(days=1)).date()
                     result = pd.concat(
-                        [
-                            result,
-                            pd.DataFrame(
-                                [[i.date, i.rawContent] for i in scraper.get_items()],
-                                columns=["date", "rawContent"],
-                            ),
-                        ]
+                        [result, self._sns_wrapper(symbol, since, decreased_until)]
                     )
+                    # If reducing time range does not change results (which can be checked
+                    # by comparing the new results' earliest timestamp to the previously-noted
+                    # earliest timestamp), there may not be any additional tweets.
+                    # If that is the case, the additional searches can cease.
                     if pd.to_datetime(result["date"]).min() == current_min:
                         break
+                    # Minimum timestamp is updated after the comparison step of each iteration.
                     current_min = pd.to_datetime(result["date"]).min()
             except:
                 pass
+            # Multiple searches in same range may result in duplicates
             result = result[["date", "rawContent"]].drop_duplicates()
+            # Convert timestamps to datetime.datetime
             result["date"] = pd.to_datetime(result["date"])
+            # Remove excess line breaks and whitespace in tweet contents
             result["rawContent"] = result["rawContent"].str.replace(
                 r"\r+|\n+|\t+", " ", regex=True
             )
-            result.sort_values(by="date").to_csv(
-                f"{path}/{symbol}.csv", mode="a", index=False, header=False
-            )
-            since += delta
-            until += delta
-        logging.disable(logging.NOTSET)  # turn logging back on
 
-    def twitter_data(self, symbols: list):
+            # Sort tweets by timestamp for this iteration's date range
+            # Don't write header to file because the header is already written.
+            # Final DataFrame (result) for each time period (iteration) is appended to the csv,
+            # then `result` is overwritten to reduce memory usage and save progress.
+            result.sort_values(by="date").to_csv(
+                f"tweets/{symbol}.csv", mode="a", index=False, header=False
+            )
+            # Increment twitter search date range
+            since += self.delta
+            until += self.delta
+        # Turn logging back on
+        logging.disable(logging.NOTSET)
+
+    def get_tweets(self, symbols: list = None, number: int = 100):
+        # If no symbols are specified, function will retrieve tweets
+        # for the top # of equities according to market cap (default = 100)
+        if not symbols:
+            # Retrieve consumer discretionaries and consumer staples from CSVs
+            symbols = pd.concat(
+                [
+                    pd.read_csv("equities/discretionary.csv"),
+                    pd.read_csv("equities/staples.csv"),
+                ]
+            )
+            # Exclude equities with different classes or additional circumstances
+            symbols = symbols[
+                ~(
+                    symbols["Symbol"].str.contains("/")
+                    | (symbols["Symbol"].str.len() > 4)
+                )
+            ]
+
+            # Transform `Market Cap` column into sortable floats and retrieve top # equities
+            symbols["Market Cap"] = (
+                symbols["Market Cap"]
+                .str.replace(",", "")
+                .apply(self.convert_m_to_float)
+            )
+            symbols = symbols.sort_values(by="Market Cap", ascending=False)[
+                "Symbol"
+            ].to_list()[:number]
+
+        # Loop through `tweets` directory to check if CSV exists for each equity
+        # Run self._harvest_cashtag (time-consuming) on missing equities
+
+        # TODO: Check date range of CSV data to see if insertion or deletion is needed
         if not os.path.exists("tweets"):
             os.makedirs("tweets")
         for symbol in symbols:
-            # TODO: Check date range
             if not os.path.isfile(f"tweets/{symbol}.csv"):
-                self._scrape_tweets(symbol)
+                self._harvest_cashtag(symbol)
                 print("\n")
+
+        # Retrieve data from each CSV and combine into one DataFrame with cols ["symbol", "date", "rawContent"]
         tweets = pd.DataFrame()
         for symbol in symbols:
             data = pd.read_csv(f"tweets/{symbol}.csv")
@@ -378,28 +427,7 @@ class TwitterScrape(object):
             tweets = pd.concat([tweets, data])
         return tweets
 
-    def get_tweets(self, number: int = 100, symbols: list = []):
-        if len(symbols) == 0:
-            symbols = pd.concat(
-                [
-                    pd.read_csv("equities/discretionary.csv"),
-                    pd.read_csv("equities/staples.csv"),
-                ]
-            )
-            symbols = symbols[
-                ~(
-                    symbols["Symbol"].str.contains("/")
-                    | (symbols["Symbol"].str.len() > 4)
-                )
-            ]
-            symbols["Market Cap"] = (
-                symbols["Market Cap"].str.replace(",", "").apply(self.convert_to_float)
-            )
-            symbols = symbols.sort_values(by="Market Cap", ascending=False)[
-                "Symbol"
-            ].to_list()[:number]
-        self.twitter_data(symbols=symbols)
-
 
 if __name__ == "__main__":
     EquityData().update_data()
+    TwitterData().get_tweets()
