@@ -3,6 +3,7 @@
 """
 
 import pandas as pd
+import numpy as np
 
 # from date.relativedelta import realativedelta
 import requests
@@ -10,8 +11,8 @@ import os
 from tqdm import tqdm
 import sqlite3
 from snscrape.modules.twitter import TwitterSearchScraper, TwitterSearchScraperMode
-import re
-from datetime import datetime, date, time, timedelta
+from datetime import date, timedelta
+import csv
 from yfinance import download as ydownload
 import yfinance as yf
 import logging
@@ -168,120 +169,113 @@ class EquityData(Equities):
         self.download_ticker_data(stocks, "1d")
 
 
-class SeekingAlpha(object):
-    # free tier API keys for now
-    _api_key = {
-        "X-RapidAPI-Key": "65d2e2853amsh4f2ae5552f99c88p13cfc5jsn3a29e2ed9956",
-        "X-RapidAPI-Host": "seeking-alpha.p.rapidapi.com",
-    }
+# class SeekingAlpha(object):
+#     # free tier API keys for now
+#     _api_key = {
+#         "X-RapidAPI-Key": "65d2e2853amsh4f2ae5552f99c88p13cfc5jsn3a29e2ed9956",
+#         "X-RapidAPI-Host": "seeking-alpha.p.rapidapi.com",
+#     }
 
-    def __init__(self):
-        pass
-        # self.analysis_titles()
+#     def __init__(self):
+#         pass
+#         # self.analysis_titles()
 
-    def all_stocks(self, path: str = "equities/all_stocks.csv"):
-        """
-        Returns list of all stocks from specified CSV.
-        :param path:
-        :return self._all_stocks:
-        """
-        # Function called once so not yet assigned to class variable.
-        # limited to first 3 stocks while still in free tier
-        all_stocks = (
-            pd.read_csv(path, usecols=[0], engine="c").iloc[:, 0].to_list()[0:3]
-        )
-        return all_stocks
+#     def all_stocks(self, path: str = "equities/all_stocks.csv"):
+#         """
+#         Returns list of all stocks from specified CSV.
+#         :param path:
+#         :return self._all_stocks:
+#         """
+#         # Function called once so not yet assigned to class variable.
+#         # limited to first 3 stocks while still in free tier
+#         all_stocks = (
+#             pd.read_csv(path, usecols=[0], engine="c").iloc[:, 0].to_list()[0:3]
+#         )
+#         return all_stocks
 
-    def get_analysis_meta(self, querystring: dict):
-        """
-        Yields paged JSON responses from /analysis/v2/list endpoint.
-        :param querystring:
-        :return get_analysis_meta generator:
-        """
-        url = "https://seeking-alpha.p.rapidapi.com/analysis/v2/list"
-        first_page = self._session.get(url, headers=self._api_key, params=querystring)
-        if first_page.status_code == 403:
-            print("API limit reached")
-            return
-        yield first_page.json()
-        num_pages = first_page.json()["meta"]["page"]["totalPages"]
+#     def get_analysis_meta(self, querystring: dict):
+#         """
+#         Yields paged JSON responses from /analysis/v2/list endpoint.
+#         :param querystring:
+#         :return get_analysis_meta generator:
+#         """
+#         url = "https://seeking-alpha.p.rapidapi.com/analysis/v2/list"
+#         first_page = self._session.get(url, headers=self._api_key, params=querystring)
+#         if first_page.status_code == 403:
+#             print("API limit reached")
+#             return
+#         yield first_page.json()
+#         num_pages = first_page.json()["meta"]["page"]["totalPages"]
 
-        for page in range(2, num_pages + 1):
-            querystring["number"] = str(page)
-            next_page = self._session.get(
-                url, headers=self._api_key, params=querystring
-            ).json()
-            yield next_page
+#         for page in range(2, num_pages + 1):
+#             querystring["number"] = str(page)
+#             next_page = self._session.get(
+#                 url, headers=self._api_key, params=querystring
+#             ).json()
+#             yield next_page
 
-    def process_meta_json(self, page: dict):
-        """
-        Transform JSON dicts from get_analysis_meta into DataFrame.
-        :param page:
-        :return dataset:
-        """
-        data = pd.DataFrame()
-        for article in page["data"]:
-            meta = {}
-            meta["article_id"] = [article.get("id")]
-            attributes = article.get("attributes", {})
-            relationships = article.get("relationships", {})
-            meta["title"] = [attributes.get("title")]
-            meta["timestamp"] = [attributes.get("publishOn")]
-            meta["link"] = [article.get("links", {}).get("self")]
-            meta["comments"] = [attributes.get("commentCount")]
-            meta["locked_pro"] = [attributes.get("isLockedPro")]
-            meta["paywalled"] = [attributes.get("isPaywalled")]
-            meta["author_id"] = [
-                relationships.get("author", {}).get("data", {}).get("id")
-            ]
-            sentiments = relationships.get("sentiments", {}).get("data")
-            # The following attributes may not be needed in final version
-            meta["sentiment_ids"] = [[i["id"] for i in sentiments]] if not [] else [[]]
-            primary_tickers = relationships.get("primaryTickers", {}).get("data")
-            meta["primary_tickers"] = (
-                [[i["id"] for i in primary_tickers]] if not [] else [[]]
-            )
-            secondary_tickers = relationships.get("secondaryTickers", {}).get("data")
-            meta["secondary_tickers"] = (
-                [[i["id"] for i in secondary_tickers]] if not [] else [[]]
-            )
-            data = pd.concat([data, pd.DataFrame(meta)])
-        return data
+#     def process_meta_json(self, page: dict):
+#         """
+#         Transform JSON dicts from get_analysis_meta into DataFrame.
+#         :param page:
+#         :return dataset:
+#         """
+#         data = pd.DataFrame()
+#         for article in page["data"]:
+#             meta = {}
+#             meta["article_id"] = [article.get("id")]
+#             attributes = article.get("attributes", {})
+#             relationships = article.get("relationships", {})
+#             meta["title"] = [attributes.get("title")]
+#             meta["timestamp"] = [attributes.get("publishOn")]
+#             meta["link"] = [article.get("links", {}).get("self")]
+#             meta["comments"] = [attributes.get("commentCount")]
+#             meta["locked_pro"] = [attributes.get("isLockedPro")]
+#             meta["paywalled"] = [attributes.get("isPaywalled")]
+#             meta["author_id"] = [
+#                 relationships.get("author", {}).get("data", {}).get("id")
+#             ]
+#             sentiments = relationships.get("sentiments", {}).get("data")
+#             # The following attributes may not be needed in final version
+#             meta["sentiment_ids"] = [[i["id"] for i in sentiments]] if not [] else [[]]
+#             primary_tickers = relationships.get("primaryTickers", {}).get("data")
+#             meta["primary_tickers"] = (
+#                 [[i["id"] for i in primary_tickers]] if not [] else [[]]
+#             )
+#             secondary_tickers = relationships.get("secondaryTickers", {}).get("data")
+#             meta["secondary_tickers"] = (
+#                 [[i["id"] for i in secondary_tickers]] if not [] else [[]]
+#             )
+#             data = pd.concat([data, pd.DataFrame(meta)])
+#         return data
 
-    def analysis_titles(self, path: str = "seeking_alpha_analysis.csv"):
-        """
-        Retrieves metadata DataFrame for all SA analyses of each ticker in self.all_stocks().
-        Writes DataFrame to CSV.
-        :param path:
-        :return dataset:
-        """
-        if not os.path.isfile(path):
-            self._session = requests.Session()
-            dataset = pd.DataFrame()
-            for ticker in tqdm(self.all_stocks()):
-                try:
-                    querystring = {"id": ticker, "size": "40", "number": "1"}
-                    for page in self.get_analysis_meta(querystring):
-                        ticker_data = self.process_meta_json(page)
-                        ticker_data["ticker"] = ticker
-                        dataset = pd.concat([dataset, ticker_data])
-                        dataset.to_csv(path, index=False)
-                except:
-                    pass
-        else:
-            dataset = pd.read_csv(path)
-        return dataset
+#     def analysis_titles(self, path: str = "seeking_alpha_analysis.csv"):
+#         """
+#         Retrieves metadata DataFrame for all SA analyses of each ticker in self.all_stocks().
+#         Writes DataFrame to CSV.
+#         :param path:
+#         :return dataset:
+#         """
+#         if not os.path.isfile(path):
+#             self._session = requests.Session()
+#             dataset = pd.DataFrame()
+#             for ticker in tqdm(self.all_stocks()):
+#                 try:
+#                     querystring = {"id": ticker, "size": "40", "number": "1"}
+#                     for page in self.get_analysis_meta(querystring):
+#                         ticker_data = self.process_meta_json(page)
+#                         ticker_data["ticker"] = ticker
+#                         dataset = pd.concat([dataset, ticker_data])
+#                         dataset.to_csv(path, index=False)
+#                 except:
+#                     pass
+#         else:
+#             dataset = pd.read_csv(path)
+#         return dataset
 
 
 class TwitterData(object):
-    # TODO: Date range, period, and symbols
-    def __init__(
-        self, start: date = date(2021, 6, 1), end: date = date.today(), period: int = 7
-    ):
-        # Sets time period (date range length for each search), start date, and end date
-        self.start_date = start
-        self.end_date = end
-        self.delta = timedelta(days=period)
+    def __init__(self):
         pass
 
     @staticmethod
@@ -290,9 +284,9 @@ class TwitterData(object):
             return x
         return float(x.replace("M", "")) * 1000000
 
-    def _sns_wrapper(self, symbol: str, since: date, until: date):
+    def _sns_search(self, symbol: str, since: date, until: date):
         """
-        Retrieves top tweets (according to Twitter) for a given date range with
+        Wrapper that retrieves top tweets (according to Twitter) for a given date range with
         the specified symbol's cashtag. The specific tweets retrieved can vary
         due to different date ranges.
         Uses the TwitterSearchScraper from snscrape to retrieve Tweets.
@@ -304,7 +298,7 @@ class TwitterData(object):
             end="\r",
         )
         # Assemble Twitter-friendly search string, with some constraints to reduce overall number of tweets
-        search_str = f"${symbol} lang:en since:{since.strftime('%Y-%m-%d')} until:{since.strftime('%Y-%m-%d')} -filter:links -filter:replies"
+        search_str = f"${symbol} lang:en since:{since.strftime('%Y-%m-%d')} until:{until.strftime('%Y-%m-%d')} -filter:links -filter:replies"
         snstweet = TwitterSearchScraper(
             search_str,
             mode=TwitterSearchScraperMode.TOP,
@@ -316,9 +310,12 @@ class TwitterData(object):
         )
         return result
 
-    def _harvest_cashtag(
+    def harvest_cashtag(
         self,
         symbol: str,
+        start: date = date(2021, 6, 5),
+        end: date = date.today(),
+        overwrite: bool = True,
     ):
         """
         Harvests tweets for the pre-specified date range of a given symbol.
@@ -326,13 +323,15 @@ class TwitterData(object):
         # Turn off logging to suppress snscrape output
         logging.disable(logging.CRITICAL)
         # Create empty .csv with headers for our symbol
-        with open(f"tweets/{symbol}.csv", "w") as f:
-            f.write("time,rawContent\n")
-        since = self.start_date
-        until = since + self.delta
-        # Run `self.delta`-ly search for top tweets in specified time range
-        while since <= self.end_date:
-            result = self._sns_wrapper(symbol, since, until)
+        if overwrite:
+            with open(f"tweets/{symbol}.csv", "w") as f:
+                f.write('"timestamp","content","symbol"\n')
+        since = start
+        delta = timedelta(days=7)
+        until = since + delta
+        # Run weekly (Sat to Fri) search for top tweets in specified time range
+        while since <= end:
+            result = self._sns_search(symbol, since, until)
             current_min = pd.to_datetime(result["date"]).min()
             # Check if any tweets are missing by comparing earliest date in
             # `results` with our specified `since` date.
@@ -345,7 +344,7 @@ class TwitterData(object):
                 while current_min.date() > since:
                     decreased_until = (current_min + timedelta(days=1)).date()
                     result = pd.concat(
-                        [result, self._sns_wrapper(symbol, since, decreased_until)]
+                        [result, self._sns_search(symbol, since, decreased_until)]
                     )
                     # If reducing time range does not change results (which can be checked
                     # by comparing the new results' earliest timestamp to the previously-noted
@@ -370,16 +369,45 @@ class TwitterData(object):
             # Don't write header to file because the header is already written.
             # Final DataFrame (result) for each time period (iteration) is appended to the csv,
             # then `result` is overwritten to reduce memory usage and save progress.
+            result["symbol"] = symbol
             result.sort_values(by="date").to_csv(
-                f"tweets/{symbol}.csv", mode="a", index=False, header=False
+                f"tweets/{symbol}.csv",
+                mode="a",
+                index=False,
+                header=False,
+                quoting=csv.QUOTE_NONNUMERIC,
             )
             # Increment twitter search date range
-            since += self.delta
-            until += self.delta
+            since += delta
+            until += delta
         # Turn logging back on
         logging.disable(logging.NOTSET)
 
-    def get_tweets(self, symbols: list = None, number: int = 100):
+    def update_cashtag(self, symbol: str):
+        # If latest tweets in data are not current,
+        # redo search for each missing week until present day and/or
+        # redo search for current week beginning at the latest Saturday.
+        # Method is rudimentary because it does not allow for an end date
+        # that is not today nor does it update the data given an earlier start date.
+        # Will add those options if necessary.
+        tweets = pd.read_csv(f"tweets/{symbol}.csv")
+        tweets["timestamp"] = pd.to_datetime(tweets["timestamp"])
+        if tweets["timestamp"].max().date() >= date.today():
+            return
+        latest_saturday = (
+            tweets[tweets["timestamp"].dt.dayofweek == 5]["timestamp"].max().date()
+        )
+        tweets = tweets[tweets["timestamp"].dt.date < latest_saturday]
+        tweets.to_csv(f"tweets/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False)
+        self.harvest_cashtag(
+            symbol=symbol,
+            start=latest_saturday,
+            overwrite=False,
+        )
+
+    def get_tweets(
+        self, symbols: list = None, number: int = 100, refresh_cashtag=False
+    ):
         # If no symbols are specified, function will retrieve tweets
         # for the top # of equities according to market cap (default = 100)
         if not symbols:
@@ -410,24 +438,23 @@ class TwitterData(object):
 
         # Loop through `tweets` directory to check if CSV exists for each equity
         # Run self._harvest_cashtag (time-consuming) on missing equities
-
-        # TODO: Check date range of CSV data to see if insertion or deletion is needed
         if not os.path.exists("tweets"):
             os.makedirs("tweets")
         for symbol in symbols:
             if not os.path.isfile(f"tweets/{symbol}.csv"):
-                self._harvest_cashtag(symbol)
+                self.harvest_cashtag(symbol=symbol)
+                print("\n")
+            elif refresh_cashtag:
+                # Refresh any data that was not just retrieved.
+                self.update_cashtag(symbol=symbol)
                 print("\n")
 
-        # Retrieve data from each CSV and combine into one DataFrame with cols ["symbol", "date", "rawContent"]
-        tweets = pd.DataFrame()
+        result = pd.DataFrame()
+        # Retrieve data from CSVs
         for symbol in symbols:
-            data = pd.read_csv(f"tweets/{symbol}.csv")
-            data["symbol"] = symbol
-            tweets = pd.concat([tweets, data])
-        return tweets
+            result = pd.concat([result, pd.read_csv(f"tweets/{symbol}.csv")])
+        return result
 
 
 if __name__ == "__main__":
     EquityData().update_data()
-    TwitterData().get_tweets()
