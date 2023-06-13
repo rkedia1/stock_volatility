@@ -173,3 +173,8 @@ REDDIT_USER_AGENT=Stock Sentiment API
 REDDIT_USERNAME=shudderisland098
 REDDIT_PASSWORD=sjikpnex973
 
+
+# OTHER
+.idea
+database.db
+
