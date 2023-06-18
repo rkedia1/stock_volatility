@@ -3,9 +3,14 @@ from tqdm import tqdm
 import pickle
 import os
 
+# Feature methods
 from ta.volatility import BollingerBands
 from ta.trend import MACD
 
+# Models and SK
+from lightgbm import LGBMRegressor
+
+# Local methods
 from analysis import AnalysisTargets
 from data import EquityData
 from applied_stocks import applied_list
@@ -68,7 +73,7 @@ class TechnicalModel(EnsembleObjective):
         Y = pd.concat([technical_datasets[equity]['Y'] for equity in technical_datasets])
 
 
-        from lightgbm import LGBMRegressor
+
         model = LGBMRegressor()
 
         # TODO include a validation split for LGBM or XGB
@@ -89,8 +94,10 @@ class TechnicalModel(EnsembleObjective):
 
             # TO DENOTE; this is missing two samples but is nominal in comparison
             baseline_assumption = subset_y.shift(2)
-            baseline_dataset = pd.merge(baseline_assumption, subset_y)
+            baseline_dataset = pd.merge(baseline_assumption, subset_y, left_index=True, right_index=True).dropna()
+            baseline_dataset.columns = ['Pred', 'Actual']
 
+            subset_score = MAE(baseline_dataset['Pred'], baseline_dataset['Actual'])
 
 
 
