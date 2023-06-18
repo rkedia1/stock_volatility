@@ -9,7 +9,9 @@ from ta.trend import MACD
 
 # Models and SK
 from lightgbm import LGBMRegressor
-from sklearn.metrics import mean_absolute_error as MAE
+from sklearn.metrics import mean_absolute_error as MAE, \
+    mean_absolute_percentage_error as MAPE, \
+    mean_squared_error as MSE
 
 # Local methods
 from analysis import AnalysisTargets
@@ -58,7 +60,9 @@ class VisualObjective(EnsembleObjective):
         print(dataset)
 
 class TechnicalModel(EnsembleObjective):
+    random_state = 42
     technical_datasets = dict()
+
     def __init__(self):
         EnsembleObjective.__init__(self)
 
@@ -85,38 +89,68 @@ class TechnicalModel(EnsembleObjective):
             Y = Y.loc[Y.index.isin(X.index)]
 
             technical_datasets[equity] = {'X': X, 'Y': Y}
+        return technical_datasets
 
-        X, Y = pd.DataFrame(), pd.DataFrame()
-        X = pd.concat([technical_datasets[equity]['X'] for equity in technical_datasets])
-        Y = pd.concat([technical_datasets[equity]['Y'] for equity in technical_datasets])
-
-        model = LGBMRegressor()
-
+    @staticmethod
+    def temporal_train_test_split(X: pd.DataFrame, Y: pd.DataFrame) -> tuple:
         # TODO include a validation split for LGBM or XGB
         split_index = X.index[int(len(X.index) * .7)]
         xtrain, xtest, ytrain, ytest = X.loc[X.index < split_index], X.loc[X.index >= split_index], \
             Y.loc[Y.index < split_index], Y.loc[Y.index >= split_index]
+        return xtrain, xtest, ytrain, ytest
 
+    def run_analysis(self, additional_data: None):
+        # TODO pass params down
+        technical_datasets = self.create_technical_datasets()
+        # TODO if additional data is passed; merge here to show benefit;
+        # will need to know method to merge data as this is a dictionary by equity
+
+        # concatenate all of the dataframes from the dictionary into a single X, Y
+        X, Y = pd.DataFrame(), pd.DataFrame()
+        X = pd.concat([technical_datasets[equity]['X'] for equity in technical_datasets])
+        Y = pd.concat([technical_datasets[equity]['Y'] for equity in technical_datasets])
+        # build a train test instance
+        xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
+
+        model = LGBMRegressor(random_state=self.random_state)
         model.fit(xtrain, ytrain)
-
         pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
 
+        scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
+        baseline_scores = self.evaluate_baseline(technical_datasets)
+        improvement = self.determine_improvement(scores, baseline_scores)
 
-        score = MAE(pred, ytest)
+    @staticmethod
+    def determine_improvement(scoreset_a: dict, scoreset_b: dict) -> dict:
+        improvement = dict()
+        for key, val in scoreset_a.items():
+            try:
+                improvement[key] = scoreset_b[key] - scoreset_a[key]
+            except: pass
+        return improvement
 
+    def evaluate_baseline(self, technical_datasets: dict) -> dict:
+        baseline = {'MAE': list(),
+                    'MSE': list()}
         for equity in technical_datasets:
             try:
-                subset_x = technical_datasets[equity]['X']
                 subset_y = technical_datasets[equity]['Y']
 
                 # TO DENOTE; this is missing two samples but is nominal in comparison
+                # TODO set n instance looking forward
                 baseline_assumption = subset_y.shift(2)
                 baseline_dataset = pd.merge(baseline_assumption, subset_y, left_index=True, right_index=True).dropna()
                 baseline_dataset.columns = ['Pred', 'Actual']
 
-                subset_score = MAE(baseline_dataset['Pred'], baseline_dataset['Actual'])
+                subset_mae = MAE(baseline_dataset['Pred'], baseline_dataset['Actual'])
+                subset_mse = MSE(baseline_dataset['Pred'], baseline_dataset['Actual'])
+                baseline['MAE'].append(subset_mae)
+                baseline['MSE'].append(subset_mse)
             except Exception as e:
                 print(e)
+
+        baseline_scores = {key : sum(vals) / len(vals) for key, vals in baseline.items()}
+        return baseline_scores
 
 
 
@@ -139,7 +173,6 @@ if __name__ == '__main__':
 
             pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
 
-            from sklearn.metrics import mean_absolute_error as MAE
             score = MAE(pred, ytest)
 
             dummy_pred = ytest.shift(2)
