@@ -9,6 +9,7 @@ from ta.trend import MACD
 
 # Models and SK
 from lightgbm import LGBMRegressor
+from sklearn.metrics import mean_absolute_error as MAE
 
 # Local methods
 from analysis import AnalysisTargets
@@ -40,6 +41,22 @@ class EnsembleObjective(AnalysisTargets):
             pickle.dump(self.applied_datasets, handle)
 
 
+class VisualObjective(EnsembleObjective):
+    _dataset = pd.DataFrame()
+    def __init__(self):
+        EnsembleObjective.__init__(self)
+
+    @property
+    def data(self):
+        if self._dataset.empty:
+            for stock in self.stocks:
+                self._dataset = pd.concat([self._dataset, self.applied_datasets[stock]])
+        return self._dataset
+
+    def plot(self):
+        dataset = self.data.copy()
+        print(dataset)
+
 class TechnicalModel(EnsembleObjective):
     technical_datasets = dict()
     def __init__(self):
@@ -49,6 +66,7 @@ class TechnicalModel(EnsembleObjective):
         technical_datasets = dict()
         for equity, dataset in self.applied_datasets.items():
             bb = BollingerBands(close=dataset['Close'])
+            # TODO IMO
             dataset['bb_upper'] = bb.bollinger_hband()
             dataset['bb_lower'] = bb.bollinger_lband()
             dataset['bb_pband'] = bb.bollinger_pband()
@@ -72,8 +90,6 @@ class TechnicalModel(EnsembleObjective):
         X = pd.concat([technical_datasets[equity]['X'] for equity in technical_datasets])
         Y = pd.concat([technical_datasets[equity]['Y'] for equity in technical_datasets])
 
-
-
         model = LGBMRegressor()
 
         # TODO include a validation split for LGBM or XGB
@@ -85,19 +101,22 @@ class TechnicalModel(EnsembleObjective):
 
         pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
 
-        from sklearn.metrics import mean_absolute_error as MAE
+
         score = MAE(pred, ytest)
 
         for equity in technical_datasets:
-            subset_x = technical_datasets[equity]['X']
-            subset_y = technical_datasets[equity]['Y']
+            try:
+                subset_x = technical_datasets[equity]['X']
+                subset_y = technical_datasets[equity]['Y']
 
-            # TO DENOTE; this is missing two samples but is nominal in comparison
-            baseline_assumption = subset_y.shift(2)
-            baseline_dataset = pd.merge(baseline_assumption, subset_y, left_index=True, right_index=True).dropna()
-            baseline_dataset.columns = ['Pred', 'Actual']
+                # TO DENOTE; this is missing two samples but is nominal in comparison
+                baseline_assumption = subset_y.shift(2)
+                baseline_dataset = pd.merge(baseline_assumption, subset_y, left_index=True, right_index=True).dropna()
+                baseline_dataset.columns = ['Pred', 'Actual']
 
-            subset_score = MAE(baseline_dataset['Pred'], baseline_dataset['Actual'])
+                subset_score = MAE(baseline_dataset['Pred'], baseline_dataset['Actual'])
+            except Exception as e:
+                print(e)
 
 
 
