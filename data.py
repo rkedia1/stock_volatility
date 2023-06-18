@@ -143,16 +143,21 @@ class EquityData(Equities):
     def get_data(self, stock: str,
                  interval: str = '1h') -> pd.DataFrame:
         try:
-            # this is a bit of a hard code; and the database should have been created
-            # with appropriate index names, but this isn't a production case so who cares
-            applied_index_name = 'index'
-            if interval == '1d':
-                applied_index_name = 'Date'
+            # # this is a bit of a hard code; and the database should have been created
+            # # with appropriate index names, but this isn't a production case so who cares
+            # applied_index_name = 'Datetime'
+            # if interval == '1d':
+            #     applied_index_name = 'Date'
 
             table_name = f"{stock}_{interval.lower()}"
             query = f"SELECT * FROM [{table_name}]"
             with sqlite3.connect(self.db_name) as conn:
-                df = pd.read_sql(query, con=conn, index_col=applied_index_name, parse_dates=True)
+                df = pd.read_sql(query, con=conn)
+                # this should fix any version issues with sqlite; hotfix
+                for col in ['index', 'Datetime', 'Date']:
+                    try:
+                        df.set_index(col, inplace=True)
+                    except: pass
                 df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
                 return df
         except Exception as e:

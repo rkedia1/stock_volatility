@@ -26,41 +26,47 @@ class AnalysisTargets(EquityData):
         :return:
         '''
         # creates a name to avoid having to pull the same data multiple times
-        datasets = dict()
-        intervals = ['1h', '1d']
-        for interval in intervals:
-            name = f'{equity}_{interval}'.lower()
-            if name not in self.base_datasets:
-                self.base_datasets[name] = self.get_data(equity, interval)
+        try:
+            datasets = dict()
+            intervals = ['1h', '1d']
+            for interval in intervals:
+                name = f'{equity}_{interval}'.lower()
+                if name not in self.base_datasets:
+                    self.base_datasets[name] = self.get_data(equity, interval)
 
-            try:
-                df = self.base_datasets[name].copy()
-                if interval == '1h':
-                    datasets['Deviation'] = self.create_intraday_dataset(df, deviation_window)
-                elif interval == '1d':
-                    datasets['Base'] = self.base_datasets[name].copy()
-            except Exception as e:
-                print(e)
+                try:
+                    df = self.base_datasets[name].copy()
+                    if interval == '1h':
+                        datasets['Deviation'] = self.create_intraday_dataset(df, deviation_window)
+                    elif interval == '1d':
+                        datasets['Base'] = self.base_datasets[name].copy()
+                except Exception as e:
+                    print(e)
 
-        if all(x in datasets for x in ['Deviation', 'Base']):
-            applied_dataset = datasets['Base'].copy()
-            applied_dataset['Rolling Change'] = applied_dataset['Close'].pct_change(rolling_change_window)
-            applied_dataset = pd.merge(applied_dataset, datasets['Deviation'], left_index=True, right_index=True)
-            print(applied_dataset)
+            if all(x in datasets for x in ['Deviation', 'Base']):
+                applied_dataset = datasets['Base'].copy()
+                applied_dataset['Rolling Change'] = applied_dataset['Close'].pct_change(rolling_change_window)
+                applied_dataset = pd.merge(applied_dataset, datasets['Deviation'], left_index=True, right_index=True)
+                return applied_dataset
+        except Exception as e:
+            print(e)
 
     def create_intraday_dataset(self, df: pd.DataFrame,
                                 deviation_window: int):
-        df['pct_change'] = df['Close'].pct_change() * 100
+        try:
+            df['pct_change'] = df['Close'].pct_change() * 100
 
-        df.dropna(inplace=True)
-        df.index = pd.DatetimeIndex(df.index)
+            df.dropna(inplace=True)
+            df.index = pd.DatetimeIndex(df.index)
 
-        # in the case the below doesn't make sense
-        # https://stackoverflow.com/questions/24875671/resample-in-a-rolling-window-using-pandas
-        rolling_std = pd.DataFrame(df[['pct_change']].rolling(f'{deviation_window}d'). \
-                                   std().resample('1d').first())
-        rolling_std.columns = ['Deviation']
-        return rolling_std
+            # in the case the below doesn't make sense
+            # https://stackoverflow.com/questions/24875671/resample-in-a-rolling-window-using-pandas
+            rolling_std = pd.DataFrame(df[['pct_change']].rolling(f'{deviation_window}d'). \
+                                       std().resample('1d').first())
+            rolling_std.columns = ['Deviation']
+            return rolling_std
+        except Exception as e:
+            print(e)
 
 
 if __name__ == '__main__':
@@ -68,19 +74,4 @@ if __name__ == '__main__':
     dataset = AnalysisTargets().create_target_dataset('PG')
 
 
- 
-# class TechnicalWrapper(object):
-#     attributes = {'MACD': {'method': MACD,
-#                            'inputs': ['window_slow', 'window_fast', 'window_sign'],
-#                            'outputs': ['macd_signal', 'macd', 'macd_diff'],
-#                            },
-#                   }
-#     def __init__(self):
-#         pass
-#
-# class TechnicalAnalysis(EquityData):
-#     def __init__(self):
-#         EquityData.__init__(self)
-#
-#
-#     def analyze(self):
+
