@@ -375,7 +375,7 @@ class TwitterData(object):
             os.makedirs("tweets-with-sentiment")
         tweets = self.get_tweets()
         for symbol in tweets['symbol'].unique():
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
             ticker = tweets[tweets['symbol'] == symbol]
             analyzer = SentimentIntensityAnalyzer()
             ticker['sentiment_score'] =  ticker['content'].apply(lambda x: analyzer.polarity_scores(x)['compound'])
@@ -423,49 +423,83 @@ class TechnicalClusteringData(object):
             cr = CurrencyRates()
             result = pd.DataFrame()
             for symbol, mktcap in self.symbols:
-                ticker = yq.Ticker(symbol)
-                info = ticker.get_financial_data(
-                    types=["DilutedEPS", "NormalizedEBITDA", "TotalRevenue"],
-                    trailing=False,
-                )
-                info_temp = info[info["asOfDate"].dt.year == 2021].sort_values(
-                    by="asOfDate", ascending=False
-                )
-                if info_temp["asOfDate"].iloc[0].month < 3:
-                    info_temp = info[info["asOfDate"].dt.year == 2022].sort_values(
-                        by="asOfDate", ascending=True
+                if symbol != "ONON" and symbol != "RIVN" and symbol != "PSNY":
+                    ticker = yq.Ticker(symbol)
+                    info = ticker.get_financial_data(
+                        types=["DilutedEPS", "NormalizedEBITDA", "TotalRevenue"],
+                        trailing=False,
                     )
-                info = info_temp
-                info["MarketCap"] = mktcap
-                if info["currencyCode"].iloc[0] != "USD":
-                    info["DilutedEPS"].iloc[0] = round(
-                        cr.convert(
-                            info["currencyCode"].iloc[0],
-                            "USD",
-                            info["DilutedEPS"].iloc[0],
-                            info["asOfDate"].iloc[0],
-                        ),
-                        2,
+                    info_temp = info[info["asOfDate"].dt.year == 2021].sort_values(
+                        by="asOfDate", ascending=False
                     )
-                    info["NormalizedEBITDA"].iloc[0] = round(
-                        cr.convert(
-                            info["currencyCode"].iloc[0],
-                            "USD",
-                            info["NormalizedEBITDA"].iloc[0],
-                            info["asOfDate"].iloc[0],
-                        ),
-                        2,
+                    if info_temp["asOfDate"].iloc[0].month < 3:
+                        info_temp = info[info["asOfDate"].dt.year == 2022].sort_values(
+                            by="asOfDate", ascending=True
+                        )
+                    info = info_temp
+                    info["MarketCap"] = mktcap
+                    if info["currencyCode"].iloc[0] != "USD":
+                        info["DilutedEPS"].iloc[0] = round(
+                            cr.convert(
+                                info["currencyCode"].iloc[0],
+                                "USD",
+                                info["DilutedEPS"].iloc[0],
+                                info["asOfDate"].iloc[0],
+                            ),
+                            2,
+                        )
+                        info["NormalizedEBITDA"].iloc[0] = round(
+                            cr.convert(
+                                info["currencyCode"].iloc[0],
+                                "USD",
+                                info["NormalizedEBITDA"].iloc[0],
+                                info["asOfDate"].iloc[0],
+                            ),
+                            2,
+                        )
+                        info["TotalRevenue"].iloc[0] = round(
+                            cr.convert(
+                                info["currencyCode"].iloc[0],
+                                "USD",
+                                info["TotalRevenue"].iloc[0],
+                                info["asOfDate"].iloc[0],
+                            ),
+                            2,
+                        )
+                        info["currencyCode"].iloc[0] = "USD"
+                    price_change = ticker.history(
+                        period="2y", interval="3mo", start="01-01-2021", adj_ohlc=True
                     )
-                    info["TotalRevenue"].iloc[0] = round(
-                        cr.convert(
-                            info["currencyCode"].iloc[0],
-                            "USD",
-                            info["TotalRevenue"].iloc[0],
-                            info["asOfDate"].iloc[0],
-                        ),
-                        2,
-                    )
-                    info["currencyCode"].iloc[0] = "USD"
+                    info["PriceYoY2021"] = (
+                        (
+                            price_change.loc[(symbol, date(2022, 1, 1)), "open"]
+                            - price_change.loc[(symbol, date(2021, 1, 1)), "open"]
+                        )
+                        / (price_change.loc[(symbol, date(2021, 1, 1)), "open"])
+                    ) * 100
+                    info["PriceYoY2022"] = (
+                        (
+                            price_change.loc[(symbol, date(2023, 1, 1)), "open"]
+                            - price_change.loc[(symbol, date(2022, 1, 1)), "open"]
+                        )
+                        / (price_change.loc[(symbol, date(2022, 1, 1)), "open"])
+                    ) * 100
+
+                    revenue_change = ticker.income_statement(trailing=False)
+                    info["RevenueYoY2021"] = (
+                        (
+                            revenue_change.iloc[-2].loc["TotalRevenue"]
+                            - revenue_change.iloc[-3].loc["TotalRevenue"]
+                        )
+                        / (revenue_change.iloc[-3].loc["TotalRevenue"])
+                    ) * 100
+                    info["RevenueYoY2022"] = (
+                        (
+                            revenue_change.iloc[-1].loc["TotalRevenue"]
+                            - revenue_change.iloc[-2].loc["TotalRevenue"]
+                        )
+                        / (revenue_change.iloc[-2].loc["TotalRevenue"])
+                    ) * 100
                 result = pd.concat([result, info])
             result.to_csv("symbol_fundamentals.csv")
         else:
@@ -477,7 +511,8 @@ if __name__ == "__main__":
     EquityData().update_data()
     
     
-x = TwitterData()
+#x = TwitterData()
 
-print(x.sentiment_score())
+#print(x.sentiment_score())
+
 
