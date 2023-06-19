@@ -14,6 +14,7 @@ from sklearn.metrics import (
     davies_bouldin_score,
 )
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -93,125 +94,178 @@ class AnalysisTargets(EquityData):
             print(e)
 
 
-class KmeansTechnicals(TechnicalClusteringData):
-    random_state = 42
+class ClusterFinancials(TechnicalClusteringData):
+    cluster_features = [
+        "DilutedEPS",
+        "NormalizedEBITDA",
+        "TotalRevenue",
+        "MarketCap",
+        "PriceYoY2021",
+        "PriceYoY2022",
+        "RevenueYoY2021",
+        "RevenueYoY2022",
+    ]
 
     def __init__(self):
         TechnicalClusteringData.__init__(self)
         self.yf_data = self.get_yfinance_data()
-
-    def inertia(self, max_clusters: int = 21):
-        labels = self.yf_data.index.to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        within_group_sum_of_squares = []
-        K = range(2, max_clusters + 1)
-        for k in K:
-            km = KMeans(n_clusters=k, random_state=self.random_state, init="k-means++")
-            km = km.fit(values)
-            within_group_sum_of_squares.append(km.inertia_)
-        return K, within_group_sum_of_squares
-
-    def calinski_harabasz(self, max_clusters: int = 21):
-        labels = self.yf_data.index.to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        calinski_harabasz_scores = []
-        K = range(2, max_clusters + 1)
-        for k in K:
-            km = KMeans(n_clusters=k, random_state=self.random_state, init="k-means++")
-            km = km.fit(values)
-            calinski_harabasz_scores.append(calinski_harabasz_score(values, km.labels_))
-        return K, calinski_harabasz_scores
-
-    def silhouette(self, max_clusters: int = 21):
-        labels = self.yf_data.index.to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        silhouette_scores = []
-        K = range(2, max_clusters + 1)
-        for k in K:
-            km = KMeans(n_clusters=k, random_state=self.random_state, init="k-means++")
-            km = km.fit(values)
-            silhouette_scores.append(
-                silhouette_score(values, km.labels_, metric="euclidean")
-            )
-        return K, silhouette_scores
-
-    def davis_bouldin(self, max_clusters: int = 21):
-        labels = self.yf_data.symbol.to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        davis_bouldin_scores = []
-        K = range(2, max_clusters + 1)
-        for k in K:
-            km = KMeans(n_clusters=k, random_state=self.random_state, init="k-means++")
-            km = km.fit(values)
-            davis_bouldin_scores.append(davies_bouldin_score(values, km.labels_))
-        return K, davis_bouldin_scores
-
-    def cluster(self, num_clusters=3):
-        labels = self.yf_data["symbol"].to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        km = KMeans(
-            n_clusters=num_clusters, random_state=self.random_state, init="k-means++"
+        self.dimensions = StandardScaler().fit_transform(
+            self.yf_data[self.cluster_features].values
         )
-        km = km.fit(values)
-        groups = zip(labels, km.labels_)
-        return groups
+        self.labels = self.yf_data.index.to_list()
+        self.kmeans = self.KMeans(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.gmm = self.GMM(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.tsne = self.TSNE(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.pca = self.PCA(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
 
+    class KMeans:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+            self.random_state = 42
 
-class GMMTechnicals(TechnicalClusteringData):
-    random_state = 42
+        def inertia(self, max_clusters: int = 21):
+            within_group_sum_of_squares = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                km = KMeans(
+                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                )
+                km = km.fit(self.dimensions)
+                within_group_sum_of_squares.append(km.inertia_)
+            return K, within_group_sum_of_squares
 
-    def __init__(self):
-        TechnicalClusteringData.__init__(self)
-        self.yf_data = self.get_yfinance_data()
+        def calinski_harabasz(self, max_clusters: int = 21):
+            calinski_harabasz_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                km = KMeans(
+                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                )
+                km = km.fit(self.dimensions)
+                calinski_harabasz_scores.append(
+                    calinski_harabasz_score(self.dimensions, km.labels_)
+                )
+            return K, calinski_harabasz_scores
 
-    def cluster(
-        self,
-        max_iter: int = 100,
-    ):
-        labels = self.yf_data["symbol"].to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        gmm = GaussianMixture(
-            n_components=4, random_state=self.random_state, max_iter=max_iter
-        ).fit(values)
-        predicted_labels = gmm.predict(values)
-        groups = zip(labels, predicted_labels)
-        return groups
+        def silhouette(self, max_clusters: int = 21):
+            silhouette_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                km = KMeans(
+                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                )
+                km = km.fit(self.dimensions)
+                silhouette_scores.append(
+                    silhouette_score(self.dimensions, km.labels_, metric="euclidean")
+                )
+            return K, silhouette_scores
 
+        def davis_bouldin(self, max_clusters: int = 21):
+            davis_bouldin_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                km = KMeans(
+                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                )
+                km = km.fit(self.dimensions)
+                davis_bouldin_scores.append(
+                    davies_bouldin_score(self.dimensions, km.labels_)
+                )
+            return K, davis_bouldin_scores
 
-class TSNETechnicals(TechnicalClusteringData):
-    random_state = 42
+        def cluster(self, num_clusters=3):
+            km = KMeans(
+                n_clusters=num_clusters,
+                random_state=self.random_state,
+                init="k-means++",
+            )
+            km = km.fit(self.dimensions)
+            groups = zip(self.labels, km.labels_)
+            return groups
 
-    def __init__(self):
-        TechnicalClusteringData.__init__(self)
-        self.yf_data = self.get_yfinance_data()
+    class GMM:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+            self.random_state = 42
 
-    def cluster(self):
-        labels = self.yf_data["symbol"].to_list()
-        values = self.yf_data[
-            ["DilutedEPS", "NormalizedEBITDA", "TotalRevenue", "MarketCap"]
-        ].values
-        values = StandardScaler().fit_transform(values)
-        tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
-        results = tsne.fit_transform(values)
-        return results
+        def cluster(
+            self,
+            max_iter: int = 100,
+        ):
+            gmm = GaussianMixture(
+                n_components=len(self.cluster_features),
+                random_state=self.random_state,
+                max_iter=max_iter,
+            ).fit(self.dimensions)
+            predicted_labels = gmm.predict(self.dimensions)
+            groups = zip(self.labels, predicted_labels)
+            return groups
+
+    class TSNE:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+            self.random_state = 42
+
+        def reduce(
+            self,
+            n_components: int = 2,
+            verbose: int = 0,
+            perplexity: int = 40,
+            n_iter: int = 300,
+        ):
+            tsne = TSNE(
+                n_components=n_components,
+                verbose=verbose,
+                perplexity=perplexity,
+                n_iter=n_iter,
+            )
+            results = tsne.fit_transform(self.dimensions)
+            return results
+
+    class PCA:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+            self.random_state = 42
+
+        def reduce(
+            self,
+            n_components: int = 2,
+        ):
+            pca_nd = PCA(n_components=n_components, random_state=self.random_state)
+            results = pca_nd.fit_transform(self.dimensions)
+            return results
 
 
 if __name__ == "__main__":
