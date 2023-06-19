@@ -15,6 +15,8 @@ from datetime import date, timedelta
 import csv
 from yfinance import download as ydownload
 import yfinance as yf
+import yahooquery as yq
+from forex_python.converter import CurrencyRates
 import logging
 
 import warnings
@@ -140,8 +142,7 @@ class EquityData(Equities):
             dataset[stock] = self.get_data(stock, interval)
         return dataset
 
-    def get_data(self, stock: str,
-                 interval: str = '1h') -> pd.DataFrame:
+    def get_data(self, stock: str, interval: str = "1h") -> pd.DataFrame:
         try:
             # # this is a bit of a hard code; and the database should have been created
             # # with appropriate index names, but this isn't a production case so who cares
@@ -154,10 +155,11 @@ class EquityData(Equities):
             with sqlite3.connect(self.db_name) as conn:
                 df = pd.read_sql(query, con=conn)
                 # this should fix any version issues with sqlite; hotfix
-                for col in ['index', 'Datetime', 'Date']:
+                for col in ["index", "Datetime", "Date"]:
                     try:
                         df.set_index(col, inplace=True)
-                    except: pass
+                    except:
+                        pass
                 df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
                 return df
         except Exception as e:
@@ -185,111 +187,6 @@ class EquityData(Equities):
         stocks = self.consumer_stocks
         self.download_ticker_data(stocks, "1h")
         self.download_ticker_data(stocks, "1d")
-
-
-# class SeekingAlpha(object):
-#     # free tier API keys for now
-#     _api_key = {
-#         "X-RapidAPI-Key": "65d2e2853amsh4f2ae5552f99c88p13cfc5jsn3a29e2ed9956",
-#         "X-RapidAPI-Host": "seeking-alpha.p.rapidapi.com",
-#     }
-
-#     def __init__(self):
-#         pass
-#         # self.analysis_titles()
-
-#     def all_stocks(self, path: str = "equities/all_stocks.csv"):
-#         """
-#         Returns list of all stocks from specified CSV.
-#         :param path:
-#         :return self._all_stocks:
-#         """
-#         # Function called once so not yet assigned to class variable.
-#         # limited to first 3 stocks while still in free tier
-#         all_stocks = (
-#             pd.read_csv(path, usecols=[0], engine="c").iloc[:, 0].to_list()[0:3]
-#         )
-#         return all_stocks
-
-#     def get_analysis_meta(self, querystring: dict):
-#         """
-#         Yields paged JSON responses from /analysis/v2/list endpoint.
-#         :param querystring:
-#         :return get_analysis_meta generator:
-#         """
-#         url = "https://seeking-alpha.p.rapidapi.com/analysis/v2/list"
-#         first_page = self._session.get(url, headers=self._api_key, params=querystring)
-#         if first_page.status_code == 403:
-#             print("API limit reached")
-#             return
-#         yield first_page.json()
-#         num_pages = first_page.json()["meta"]["page"]["totalPages"]
-
-#         for page in range(2, num_pages + 1):
-#             querystring["number"] = str(page)
-#             next_page = self._session.get(
-#                 url, headers=self._api_key, params=querystring
-#             ).json()
-#             yield next_page
-
-#     def process_meta_json(self, page: dict):
-#         """
-#         Transform JSON dicts from get_analysis_meta into DataFrame.
-#         :param page:
-#         :return dataset:
-#         """
-#         data = pd.DataFrame()
-#         for article in page["data"]:
-#             meta = {}
-#             meta["article_id"] = [article.get("id")]
-#             attributes = article.get("attributes", {})
-#             relationships = article.get("relationships", {})
-#             meta["title"] = [attributes.get("title")]
-#             meta["timestamp"] = [attributes.get("publishOn")]
-#             meta["link"] = [article.get("links", {}).get("self")]
-#             meta["comments"] = [attributes.get("commentCount")]
-#             meta["locked_pro"] = [attributes.get("isLockedPro")]
-#             meta["paywalled"] = [attributes.get("isPaywalled")]
-#             meta["author_id"] = [
-#                 relationships.get("author", {}).get("data", {}).get("id")
-#             ]
-#             sentiments = relationships.get("sentiments", {}).get("data")
-#             # The following attributes may not be needed in final version
-#             meta["sentiment_ids"] = [[i["id"] for i in sentiments]] if not [] else [[]]
-#             primary_tickers = relationships.get("primaryTickers", {}).get("data")
-#             meta["primary_tickers"] = (
-#                 [[i["id"] for i in primary_tickers]] if not [] else [[]]
-#             )
-#             secondary_tickers = relationships.get("secondaryTickers", {}).get("data")
-#             meta["secondary_tickers"] = (
-#                 [[i["id"] for i in secondary_tickers]] if not [] else [[]]
-#             )
-#             data = pd.concat([data, pd.DataFrame(meta)])
-#         return data
-
-#     def analysis_titles(self, path: str = "seeking_alpha_analysis.csv"):
-#         """
-#         Retrieves metadata DataFrame for all SA analyses of each ticker in self.all_stocks().
-#         Writes DataFrame to CSV.
-#         :param path:
-#         :return dataset:
-#         """
-#         if not os.path.isfile(path):
-#             self._session = requests.Session()
-#             dataset = pd.DataFrame()
-#             for ticker in tqdm(self.all_stocks()):
-#                 try:
-#                     querystring = {"id": ticker, "size": "40", "number": "1"}
-#                     for page in self.get_analysis_meta(querystring):
-#                         ticker_data = self.process_meta_json(page)
-#                         ticker_data["ticker"] = ticker
-#                         dataset = pd.concat([dataset, ticker_data])
-#                         dataset.to_csv(path, index=False)
-#                 except:
-#                     pass
-#         else:
-#             dataset = pd.read_csv(path)
-#         return dataset
 
 
 class TwitterData(object):
@@ -423,37 +320,37 @@ class TwitterData(object):
             overwrite=False,
         )
 
-    def get_tweets(
-        self, symbols: list = None, number: int = 100, refresh_cashtag=False
-    ):
+    def get_symbol_list(self, number: int = 99):
+        symbols = pd.concat(
+            [
+                pd.read_csv("equities/discretionary.csv"),
+                pd.read_csv("equities/staples.csv"),
+            ]
+        )
+        # Exclude equities with different classes or additional circumstances
+        symbols = symbols[
+            ~(
+                symbols["Symbol"].str.contains("/")
+                | (symbols["Symbol"].str.len() > 4)
+                | (symbols["Description"].str.contains("ETF"))
+            )
+        ]
+
+        # Transform `Market Cap` column into sortable floats and retrieve top # equities
+        symbols["Market Cap"] = (
+            symbols["Market Cap"].str.replace(",", "").apply(self.convert_m_to_float)
+        )
+        symbols = symbols.sort_values(by="Market Cap", ascending=False)[
+            "Symbol"
+        ].to_list()[:number]
+        return symbols
+
+    def get_tweets(self, symbols: list = None, number: int = 99, refresh_cashtag=False):
         # If no symbols are specified, function will retrieve tweets
-        # for the top # of equities according to market cap (default = 100)
+        # for the top # of equities according to market cap (default = 99)
         if not symbols:
             # Retrieve consumer discretionaries and consumer staples from CSVs
-            symbols = pd.concat(
-                [
-                    pd.read_csv("equities/discretionary.csv"),
-                    pd.read_csv("equities/staples.csv"),
-                ]
-            )
-            # Exclude equities with different classes or additional circumstances
-            symbols = symbols[
-                ~(
-                    symbols["Symbol"].str.contains("/")
-                    | (symbols["Symbol"].str.len() > 4)
-                )
-            ]
-
-            # Transform `Market Cap` column into sortable floats and retrieve top # equities
-            symbols["Market Cap"] = (
-                symbols["Market Cap"]
-                .str.replace(",", "")
-                .apply(self.convert_m_to_float)
-            )
-            symbols = symbols.sort_values(by="Market Cap", ascending=False)[
-                "Symbol"
-            ].to_list()[:number]
-
+            symbols = self.get_symbol_list()
         # Loop through `tweets` directory to check if CSV exists for each equity
         # Run self._harvest_cashtag (time-consuming) on missing equities
         if not os.path.exists("tweets"):
@@ -471,6 +368,96 @@ class TwitterData(object):
         # Retrieve data from CSVs
         for symbol in symbols:
             result = pd.concat([result, pd.read_csv(f"tweets/{symbol}.csv")])
+        return result
+
+
+class TechnicalClusteringData(object):
+    def __init__(self, symbols=None):
+        self.symbols = self.get_symbols_mktcaps()
+
+    def get_symbols_mktcaps(self):
+        symbols = pd.concat(
+            [
+                pd.read_csv("equities/discretionary.csv"),
+                pd.read_csv("equities/staples.csv"),
+            ]
+        )
+        # Exclude equities with different classes or additional circumstances
+        symbols = symbols[
+            ~(
+                symbols["Symbol"].str.contains("/")
+                | (symbols["Symbol"].str.len() > 4)
+                | (symbols["Description"].str.contains("ETF"))
+            )
+        ]
+
+        # Transform `Market Cap` column into sortable floats and retrieve top # equities
+        symbols["Market Cap"] = (
+            symbols["Market Cap"]
+            .str.replace(",", "")
+            .apply(TwitterData().convert_m_to_float)
+        )
+        symbols = (
+            symbols.sort_values(by="Market Cap", ascending=False)[
+                ["Symbol", "Market Cap"]
+            ]
+            .head(99)
+            .values
+        )
+        return symbols
+
+    def get_yfinance_data(self, refresh: bool = False):
+        if not os.path.exists("symbol_fundamentals.csv") or refresh:
+            cr = CurrencyRates()
+            result = pd.DataFrame()
+            for symbol, mktcap in self.symbols:
+                ticker = yq.Ticker(symbol)
+                info = ticker.get_financial_data(
+                    types=["DilutedEPS", "NormalizedEBITDA", "TotalRevenue"],
+                    trailing=False,
+                )
+                info_temp = info[info["asOfDate"].dt.year == 2021].sort_values(
+                    by="asOfDate", ascending=False
+                )
+                if info_temp["asOfDate"].iloc[0].month < 3:
+                    info_temp = info[info["asOfDate"].dt.year == 2022].sort_values(
+                        by="asOfDate", ascending=True
+                    )
+                info = info_temp
+                info["MarketCap"] = mktcap
+                if info["currencyCode"].iloc[0] != "USD":
+                    info["DilutedEPS"].iloc[0] = round(
+                        cr.convert(
+                            info["currencyCode"].iloc[0],
+                            "USD",
+                            info["DilutedEPS"].iloc[0],
+                            info["asOfDate"].iloc[0],
+                        ),
+                        2,
+                    )
+                    info["NormalizedEBITDA"].iloc[0] = round(
+                        cr.convert(
+                            info["currencyCode"].iloc[0],
+                            "USD",
+                            info["NormalizedEBITDA"].iloc[0],
+                            info["asOfDate"].iloc[0],
+                        ),
+                        2,
+                    )
+                    info["TotalRevenue"].iloc[0] = round(
+                        cr.convert(
+                            info["currencyCode"].iloc[0],
+                            "USD",
+                            info["TotalRevenue"].iloc[0],
+                            info["asOfDate"].iloc[0],
+                        ),
+                        2,
+                    )
+                    info["currencyCode"].iloc[0] = "USD"
+                result = pd.concat([result, info])
+            result.to_csv("symbol_fundamentals.csv")
+        else:
+            result = pd.read_csv("symbol_fundamentals.csv")
         return result
 
 
