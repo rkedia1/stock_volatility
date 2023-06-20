@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import snscrape
+
 # from date.relativedelta import realativedelta
 import requests
 import os
@@ -374,14 +375,15 @@ class TwitterData(object):
         if not os.path.exists("tweets-with-sentiment"):
             os.makedirs("tweets-with-sentiment")
         tweets = self.get_tweets()
-        for symbol in tweets['symbol'].unique():
-            #import pdb; pdb.set_trace()
-            ticker = tweets[tweets['symbol'] == symbol]
+        for symbol in tweets["symbol"].unique():
+            # import pdb; pdb.set_trace()
+            ticker = tweets[tweets["symbol"] == symbol]
             analyzer = SentimentIntensityAnalyzer()
-            ticker['sentiment_score'] =  ticker['content'].apply(lambda x: analyzer.polarity_scores(x)['compound'])
-            ticker.to_csv(f'tweets-with-sentiment/{symbol}.csv')
-                
-            
+            ticker["sentiment_score"] = ticker["content"].apply(
+                lambda x: analyzer.polarity_scores(x)["compound"]
+            )
+            ticker.to_csv(f"tweets-with-sentiment/{symbol}.csv")
+
 
 class TechnicalClusteringData(object):
     def __init__(self, symbols=None):
@@ -509,10 +511,8 @@ class TechnicalClusteringData(object):
 
 if __name__ == "__main__":
     EquityData().update_data()
-    
-    
-#x = TwitterData()
-
-#print(x.sentiment_score())
 
 
+# x = TwitterData()
+
+# print(x.sentiment_score())

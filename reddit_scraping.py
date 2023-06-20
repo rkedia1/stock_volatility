@@ -22,7 +22,7 @@ reddit = praw.Reddit(
     client_secret=client_secret,
     user_agent=user_agent,
     username=username,
-    password=password
+    password=password,
 )
 
 
@@ -54,23 +54,23 @@ print(sentiment_data)
 # In[38]:
 
 
-get_ipython().run_line_magic('run', '__main__.py')
+get_ipython().run_line_magic("run", "__main__.py")
 
 
 # In[47]:
 
 
-get_ipython().system('pip list --outdated')
+get_ipython().system("pip list --outdated")
 
 
 # In[42]:
 
 
-#import __main__
+# import __main__
 from data import EquityData
 
-equity_data = EquityData() 
-data = equity_data.stock_data() 
+equity_data = EquityData()
+data = equity_data.stock_data()
 
 
 # In[43]:
@@ -80,7 +80,3 @@ print(data)
 
 
 # In[ ]:
-
-
-
-
