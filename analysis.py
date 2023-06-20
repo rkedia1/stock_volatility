@@ -4,8 +4,8 @@ from ta.volatility import BollingerBands
 from ta.trend import MACD
 
 
-from data import EquityData, TechnicalClusteringData
-from sklearn.cluster import KMeans
+from data import EquityData, FinancialsData
+from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
@@ -15,7 +15,7 @@ from sklearn.metrics import (
 )
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-import numpy as np
+import umap
 import matplotlib.pyplot as plt
 
 
@@ -94,7 +94,7 @@ class AnalysisTargets(EquityData):
             print(e)
 
 
-class ClusterFinancials(TechnicalClusteringData):
+class ClusterFinancials(FinancialsData):
     cluster_features = [
         "DilutedEPS",
         "NormalizedEBITDA",
@@ -107,13 +107,31 @@ class ClusterFinancials(TechnicalClusteringData):
     ]
 
     def __init__(self):
-        TechnicalClusteringData.__init__(self)
+        FinancialsData.__init__(self)
         self.yf_data = self.get_yfinance_data()
         self.dimensions = StandardScaler().fit_transform(
             self.yf_data[self.cluster_features].values
         )
         self.labels = self.yf_data.index.to_list()
         self.kmeans = self.KMeans(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.agglomerativeclustering = self.AgglomerativeClustering(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.dbscan = self.DBSCAN(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
+        self.pca = self.PCA(
             yf_data=self.yf_data,
             cluster_features=self.cluster_features,
             dimensions=self.dimensions,
@@ -131,12 +149,6 @@ class ClusterFinancials(TechnicalClusteringData):
             dimensions=self.dimensions,
             labels=self.labels,
         )
-        self.pca = self.PCA(
-            yf_data=self.yf_data,
-            cluster_features=self.cluster_features,
-            dimensions=self.dimensions,
-            labels=self.labels,
-        )
 
     class KMeans:
         def __init__(self, yf_data, cluster_features, dimensions, labels):
@@ -146,23 +158,51 @@ class ClusterFinancials(TechnicalClusteringData):
             self.labels = labels
             self.random_state = 42
 
-        def inertia(self, max_clusters: int = 21):
+        def inertia(
+            self,
+            max_clusters: int = 12,
+            init: str = "k-means++",
+            n_init: int = 10,
+            max_iter: int = 300,
+            tol: float = 0.0001,
+            algorithm: str = "lloyd",
+        ):
             within_group_sum_of_squares = []
             K = range(2, max_clusters + 1)
             for k in K:
                 km = KMeans(
-                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                    n_clusters=k,
+                    init=init,
+                    n_init=n_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    algorithm=algorithm,
+                    random_state=self.random_state,
                 )
                 km = km.fit(self.dimensions)
                 within_group_sum_of_squares.append(km.inertia_)
             return K, within_group_sum_of_squares
 
-        def calinski_harabasz(self, max_clusters: int = 21):
+        def calinski_harabasz(
+            self,
+            max_clusters: int = 12,
+            init: str = "k-means++",
+            n_init: int = 10,
+            max_iter: int = 300,
+            tol: float = 0.0001,
+            algorithm: str = "lloyd",
+        ):
             calinski_harabasz_scores = []
             K = range(2, max_clusters + 1)
             for k in K:
                 km = KMeans(
-                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                    n_clusters=k,
+                    init=init,
+                    n_init=n_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    algorithm=algorithm,
+                    random_state=self.random_state,
                 )
                 km = km.fit(self.dimensions)
                 calinski_harabasz_scores.append(
@@ -170,25 +210,54 @@ class ClusterFinancials(TechnicalClusteringData):
                 )
             return K, calinski_harabasz_scores
 
-        def silhouette(self, max_clusters: int = 21):
+        def silhouette(
+            self,
+            max_clusters: int = 12,
+            init: str = "k-means++",
+            n_init: int = 10,
+            max_iter: int = 300,
+            tol: float = 0.0001,
+            algorithm: str = "lloyd",
+            scoring_metric: str = "euclidean",
+        ):
             silhouette_scores = []
             K = range(2, max_clusters + 1)
             for k in K:
                 km = KMeans(
-                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                    n_clusters=k,
+                    init=init,
+                    n_init=n_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    algorithm=algorithm,
+                    random_state=self.random_state,
                 )
                 km = km.fit(self.dimensions)
                 silhouette_scores.append(
-                    silhouette_score(self.dimensions, km.labels_, metric="euclidean")
+                    silhouette_score(self.dimensions, km.labels_, metric=scoring_metric)
                 )
             return K, silhouette_scores
 
-        def davis_bouldin(self, max_clusters: int = 21):
+        def davis_bouldin(
+            self,
+            max_clusters: int = 12,
+            init: str = "k-means++",
+            n_init: int = 10,
+            max_iter: int = 300,
+            tol: float = 0.0001,
+            algorithm: str = "lloyd",
+        ):
             davis_bouldin_scores = []
             K = range(2, max_clusters + 1)
             for k in K:
                 km = KMeans(
-                    n_clusters=k, random_state=self.random_state, init="k-means++"
+                    n_clusters=k,
+                    init=init,
+                    n_init=n_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    algorithm=algorithm,
+                    random_state=self.random_state,
                 )
                 km = km.fit(self.dimensions)
                 davis_bouldin_scores.append(
@@ -196,15 +265,220 @@ class ClusterFinancials(TechnicalClusteringData):
                 )
             return K, davis_bouldin_scores
 
-        def cluster(self, num_clusters=3):
+        def cluster(
+            self,
+            n_clusters: int = 3,
+            init: str = "k-means++",
+            n_init: int = 10,
+            max_iter: int = 300,
+            tol: float = 0.0001,
+            algorithm: str = "lloyd",
+        ):
             km = KMeans(
-                n_clusters=num_clusters,
+                n_clusters=n_clusters,
+                init=init,
+                n_init=n_init,
+                max_iter=max_iter,
+                tol=tol,
+                algorithm=algorithm,
                 random_state=self.random_state,
-                init="k-means++",
             )
             km = km.fit(self.dimensions)
-            groups = zip(self.labels, km.labels_)
-            return groups
+            return self.labels, km
+
+    class AgglomerativeClustering:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+
+        def calinski_harabasz(
+            self,
+            max_clusters: int = 12,
+            metric: str = "euclidean",
+            connectivity: str = None,
+            linkage: str = "ward",
+            compute_distances: bool = False,
+        ):
+            calinski_harabasz_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                ac = AgglomerativeClustering(
+                    n_clusters=k,
+                    metric=metric,
+                    connectivity=connectivity,
+                    linkage=linkage,
+                    compute_distances=compute_distances,
+                )
+                ac = ac.fit(self.dimensions)
+                calinski_harabasz_scores.append(
+                    calinski_harabasz_score(self.dimensions, ac.labels_)
+                )
+            return K, calinski_harabasz_scores
+
+        def silhouette(
+            self,
+            max_clusters: int = 12,
+            metric: str = "euclidean",
+            connectivity: str = None,
+            linkage: str = "ward",
+            compute_distances: bool = False,
+            scoring_metric: str = "euclidean",
+        ):
+            silhouette_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                ac = AgglomerativeClustering(
+                    n_clusters=k,
+                    metric=metric,
+                    connectivity=connectivity,
+                    linkage=linkage,
+                    compute_distances=compute_distances,
+                )
+                ac = ac.fit(self.dimensions)
+                silhouette_scores.append(
+                    silhouette_score(self.dimensions, ac.labels_, metric=scoring_metric)
+                )
+            return K, silhouette_scores
+
+        def davis_bouldin(
+            self,
+            max_clusters: int = 12,
+            metric: str = "euclidean",
+            connectivity: str = None,
+            linkage: str = "ward",
+            compute_distances: bool = False,
+        ):
+            davis_bouldin_scores = []
+            K = range(2, max_clusters + 1)
+            for k in K:
+                ac = AgglomerativeClustering(
+                    n_clusters=k,
+                    metric=metric,
+                    connectivity=connectivity,
+                    linkage=linkage,
+                    compute_distances=compute_distances,
+                )
+                ac = ac.fit(self.dimensions)
+                davis_bouldin_scores.append(
+                    davies_bouldin_score(self.dimensions, ac.labels_)
+                )
+            return K, davis_bouldin_scores
+
+        def cluster(
+            self,
+            n_clusters: int = 3,
+            metric: str = "euclidean",
+            connectivity: str = None,
+            linkage: str = "ward",
+            compute_distances: bool = False,
+        ):
+            ac = AgglomerativeClustering(
+                n_clusters=n_clusters,
+                metric=metric,
+                connectivity=connectivity,
+                linkage=linkage,
+                compute_distances=compute_distances,
+            )
+            ac = ac.fit(self.dimensions)
+            return self.labels, ac
+
+    class DBSCAN:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+
+        def calinski_harabasz(
+            self,
+            eps: float = 0.5,
+            min_samples: int = 5,
+            metric: str = "euclidean",
+            algorithm: str = "auto",
+            leaf_size: int = 30,
+            p: float = None,
+            n_jobs: int = None,
+        ):
+            db = DBSCAN(
+                eps=eps,
+                min_samples=min_samples,
+                metric=metric,
+                algorithm=algorithm,
+                leaf_size=leaf_size,
+                p=p,
+                n_jobs=n_jobs,
+            )
+            db = db.fit(self.dimensions)
+            return calinski_harabasz_score(self.dimensions, db.labels_)
+
+        def silhouette(
+            self,
+            eps: float = 0.5,
+            min_samples: int = 5,
+            metric: str = "euclidean",
+            algorithm: str = "auto",
+            leaf_size: int = 30,
+            p: float = None,
+            n_jobs: int = None,
+            scoring_metric: str = "euclidean",
+        ):
+            db = DBSCAN(
+                eps=eps,
+                min_samples=min_samples,
+                metric=metric,
+                algorithm=algorithm,
+                leaf_size=leaf_size,
+                p=p,
+                n_jobs=n_jobs,
+            )
+            db = db.fit(self.dimensions)
+            return silhouette_score(self.dimensions, db.labels_, metric=scoring_metric)
+
+        def davis_bouldin(
+            self,
+            eps: float = 0.5,
+            min_samples: int = 5,
+            metric: str = "euclidean",
+            algorithm: str = "auto",
+            leaf_size: int = 30,
+            p: float = None,
+            n_jobs: int = None,
+        ):
+            db = DBSCAN(
+                eps=eps,
+                min_samples=min_samples,
+                metric=metric,
+                algorithm=algorithm,
+                leaf_size=leaf_size,
+                p=p,
+                n_jobs=n_jobs,
+            )
+            db = db.fit(self.dimensions)
+            return davies_bouldin_score(self.dimensions, db.labels_)
+
+        def cluster(
+            self,
+            eps: float = 0.5,
+            min_samples: int = 5,
+            metric: str = "euclidean",
+            algorithm: str = "auto",
+            leaf_size: int = 30,
+            p: float = None,
+            n_jobs: int = None,
+        ):
+            db = DBSCAN(
+                eps=eps,
+                min_samples=min_samples,
+                metric=metric,
+                algorithm=algorithm,
+                leaf_size=leaf_size,
+                p=p,
+                n_jobs=n_jobs,
+            )
+            db = db.fit(self.dimensions)
+            return self.labels, db
 
     class GMM:
         def __init__(self, yf_data, cluster_features, dimensions, labels):
@@ -226,6 +500,45 @@ class ClusterFinancials(TechnicalClusteringData):
             predicted_labels = gmm.predict(self.dimensions)
             groups = zip(self.labels, predicted_labels)
             return groups
+
+    class PCA:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+            self.random_state = 42
+
+        def reduce(
+            self,
+            n_components: int = 2,
+        ):
+            pca_nd = PCA(n_components=n_components, random_state=self.random_state)
+            results = pca_nd.fit_transform(self.dimensions)
+            return results
+
+    class UMAP:
+        def __init__(self, yf_data, cluster_features, dimensions, labels):
+            self.yf_data = yf_data
+            self.cluster_features = cluster_features
+            self.dimensions = dimensions
+            self.labels = labels
+
+        def reduce(
+            self,
+            n_neighbors: int = 15,
+            min_dist: int = 0.1,
+            n_components: int = 2,
+            metric: str = "euclidean",
+        ):
+            fit = umap.UMAP(
+                n_neighbors=n_neighbors,
+                min_dist=min_dist,
+                n_components=n_components,
+                metric=metric,
+            )
+            embedding = fit.fit_transform(self.dimensions)
+            return embedding
 
     class TSNE:
         def __init__(self, yf_data, cluster_features, dimensions, labels):
@@ -249,22 +562,6 @@ class ClusterFinancials(TechnicalClusteringData):
                 n_iter=n_iter,
             )
             results = tsne.fit_transform(self.dimensions)
-            return results
-
-    class PCA:
-        def __init__(self, yf_data, cluster_features, dimensions, labels):
-            self.yf_data = yf_data
-            self.cluster_features = cluster_features
-            self.dimensions = dimensions
-            self.labels = labels
-            self.random_state = 42
-
-        def reduce(
-            self,
-            n_components: int = 2,
-        ):
-            pca_nd = PCA(n_components=n_components, random_state=self.random_state)
-            results = pca_nd.fit_transform(self.dimensions)
             return results
 
 

@@ -385,7 +385,7 @@ class TwitterData(object):
             ticker.to_csv(f"tweets-with-sentiment/{symbol}.csv")
 
 
-class TechnicalClusteringData(object):
+class FinancialsData(object):
     def __init__(self, symbols=None):
         self.symbols = self.get_symbols_mktcaps()
 
