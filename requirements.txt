@@ -1,16 +1,16 @@
 forex_python==1.8
 lightgbm==3.3.5
-matplotlib==3.5.2
-nltk==3.7
-numpy==1.21.5
+matplotlib==3.7.1
+nltk==3.8.1
+numpy==1.25.0
 pandas==2.0.2
 praw==7.7.0
 python-dotenv==1.0.0
 PyYAML==6.0
 Requests==2.31.0
-scikit_learn==1.0.2
-snscrape==0.6.2.20230321.dev39+gc3b216c
+scikit_learn==1.2.2
+snscrape @ git+https://github.com/JustAnotherArchivist/snscrape.git
 ta==0.10.2
-tqdm==4.64.1
+tqdm==4.65.0
 yahooquery==2.3.1
-yfinance==0.2.18
+yfinance==0.2.20
