@@ -15,7 +15,7 @@ from sklearn.metrics import (
 )
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-import umap
+from umap.umap_ import UMAP
 import matplotlib.pyplot as plt
 
 
@@ -104,6 +104,7 @@ class ClusterFinancials(FinancialsData):
         "PriceYoY2022",
         "RevenueYoY2021",
         "RevenueYoY2022",
+        "PeRatio",
     ]
 
     def __init__(self):
@@ -112,7 +113,7 @@ class ClusterFinancials(FinancialsData):
         self.dimensions = StandardScaler().fit_transform(
             self.yf_data[self.cluster_features].values
         )
-        self.labels = self.yf_data.index.to_list()
+        self.labels = self.yf_data.reset_index().symbol.to_list()
         self.kmeans = self.KMeans(
             yf_data=self.yf_data,
             cluster_features=self.cluster_features,
@@ -143,13 +144,18 @@ class ClusterFinancials(FinancialsData):
             dimensions=self.dimensions,
             labels=self.labels,
         )
+        self.umap = self.UMAP(
+            yf_data=self.yf_data,
+            cluster_features=self.cluster_features,
+            dimensions=self.dimensions,
+            labels=self.labels,
+        )
         self.tsne = self.TSNE(
             yf_data=self.yf_data,
             cluster_features=self.cluster_features,
             dimensions=self.dimensions,
             labels=self.labels,
         )
-
     class KMeans:
         def __init__(self, yf_data, cluster_features, dimensions, labels):
             self.yf_data = yf_data
@@ -531,7 +537,7 @@ class ClusterFinancials(FinancialsData):
             n_components: int = 2,
             metric: str = "euclidean",
         ):
-            fit = umap.UMAP(
+            fit = UMAP(
                 n_neighbors=n_neighbors,
                 min_dist=min_dist,
                 n_components=n_components,
@@ -563,7 +569,6 @@ class ClusterFinancials(FinancialsData):
             )
             results = tsne.fit_transform(self.dimensions)
             return results
-
 
 if __name__ == "__main__":
     # TODO sys.argv
