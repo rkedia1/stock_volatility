@@ -412,7 +412,7 @@ class FinancialsData(object):
         )
         symbols = (
             symbols.sort_values(by="Market Cap", ascending=False)[
-                ["Symbol", "Market Cap"]
+                ["Symbol", "Market Cap", "Description"]
             ]
             .head(99)
             .values
@@ -423,7 +423,7 @@ class FinancialsData(object):
         if not os.path.exists("symbol_fundamentals.csv") or refresh:
             cr = CurrencyRates()
             result = pd.DataFrame()
-            for symbol, mktcap in self.symbols:
+            for symbol, mktcap, description in self.symbols:
                 if symbol != "ONON" and symbol != "RIVN" and symbol != "PSNY":
                     ticker = yq.Ticker(symbol)
                     info = ticker.get_financial_data(
@@ -504,9 +504,13 @@ class FinancialsData(object):
                     price = ticker.history(
                         start=info.iloc[0]["asOfDate"]
                     )
-                    price = price.iloc[0][ 'close']
+                    price = price.iloc[0]['close']
                     info['PeRatio'] = price/info['DilutedEPS']
-                result = pd.concat([result, info])
+                    prof = ticker.asset_profile
+                    info['Description'] = description
+                    info['Sector'] = prof[symbol]['sector']
+                    info['Industry'] = prof[symbol]['industry']
+                    result = pd.concat([result, info])
             result.to_csv("symbol_fundamentals.csv")
         else:
             result = pd.read_csv("symbol_fundamentals.csv")
@@ -515,6 +519,8 @@ class FinancialsData(object):
 
 if __name__ == "__main__":
     EquityData().update_data()
+    TwitterData().get_tweets()
+    FinancialsData().get_yfinance_data()
 
 # x = TwitterData()
 

@@ -17,6 +17,7 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from umap.umap_ import UMAP
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class AnalysisTargets(EquityData):
@@ -506,6 +507,27 @@ class ClusterFinancials(FinancialsData):
             predicted_labels = gmm.predict(self.dimensions)
             groups = zip(self.labels, predicted_labels)
             return groups
+
+        def cluster_probabilities(self, max_iter: int = 100):
+            gmm = GaussianMixture(
+                n_components=len(self.cluster_features),
+                random_state=self.random_state,
+                max_iter=max_iter,
+            ).fit(self.dimensions)
+            probabilities = gmm.predict_proba(self.dimensions)
+            return probabilities
+
+        def ideal_cluster_num(self, max_clusters: int = 10):
+            bics = []
+            for i in range(1, max_clusters + 1):
+                gmm = GaussianMixture(
+                    n_components=i,
+                    random_state=self.random_state,
+                    max_iter=100,
+                ).fit(self.dimensions)
+                bics.append(gmm.bic(self.dimensions))
+            optimal_clust = np.argmin(bics) + 1
+            return optimal_clust
 
     class PCA:
         def __init__(self, yf_data, cluster_features, dimensions, labels):
