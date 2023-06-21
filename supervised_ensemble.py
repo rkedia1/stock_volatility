@@ -130,7 +130,7 @@ class Model(EnsembleObjective):
     #
     #     return X, Y
 
-    def create_twitter_datasets(self):
+    def create_twitter_datasets(self) -> dict:
         sentiment_datasets = dict()
         path = 'tweets-with-sentiment'
         for filename in os.listdir(path):
@@ -170,7 +170,9 @@ class Model(EnsembleObjective):
         #         pass
         # return data
 
-    def simple_model(self, X: pd.DataFrame,
+    def simple_model(self,
+                     model: any,
+                     X: pd.DataFrame,
                      Y: pd.DataFrame) -> dict:
         try:
             xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
