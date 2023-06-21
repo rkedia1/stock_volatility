@@ -15,7 +15,9 @@ from sklearn.metrics import (
 )
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from umap.umap_ import UMAP
+try:
+    from umap.umap_ import UMAP
+except: pass
 import matplotlib.pyplot as plt
 import numpy as np
 
