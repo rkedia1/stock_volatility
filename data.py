@@ -4,7 +4,6 @@
 
 import pandas as pd
 import numpy as np
-import snscrape
 
 # from date.relativedelta import realativedelta
 import requests
@@ -502,6 +501,11 @@ class FinancialsData(object):
                         )
                         / (revenue_change.iloc[-2].loc["TotalRevenue"])
                     ) * 100
+                    price = ticker.history(
+                        start=info.iloc[0]["asOfDate"]
+                    )
+                    price = price.iloc[0][ 'close']
+                    info['PeRatio'] = price/info['DilutedEPS']
                 result = pd.concat([result, info])
             result.to_csv("symbol_fundamentals.csv")
         else:
@@ -511,7 +515,6 @@ class FinancialsData(object):
 
 if __name__ == "__main__":
     EquityData().update_data()
-
 
 # x = TwitterData()
 

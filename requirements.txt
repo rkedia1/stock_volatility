@@ -2,7 +2,7 @@ forex_python==1.8
 lightgbm==3.3.5
 matplotlib==3.7.1
 nltk==3.8.1
-numpy==1.25.0
+numpy==1.21.4
 pandas==2.0.2
 praw==7.7.0
 python-dotenv==1.0.0
@@ -14,4 +14,4 @@ ta==0.10.2
 tqdm==4.65.0
 yahooquery==2.3.1
 yfinance==0.2.20
-umap==0.1.1
+umap-learn==0.5.2
