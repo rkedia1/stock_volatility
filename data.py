@@ -383,6 +383,15 @@ class TwitterData(object):
             )
             ticker.to_csv(f"tweets-with-sentiment/{symbol}.csv")
 
+    def average_sentiment(self, symbol: str, start = date(2022,1,1), end = date(2022,12,31)):
+        if not os.path.exists("tweets-with-sentiment"):
+            self.sentiment_score()
+        tweets_with_sentiment = pd.read_csv(f"tweets-with-sentiment/{symbol}.csv")
+        tweets_with_sentiment['timestamp'] = pd.to_datetime(tweets_with_sentiment['timestamp'])
+        tweets_with_sentiment = tweets_with_sentiment[(tweets_with_sentiment['timestamp'].dt.date >= start) & (tweets_with_sentiment['timestamp'].dt.date <= end)]
+        average_sentiment = tweets_with_sentiment['sentiment_score'].mean()
+        return average_sentiment
+
 
 class FinancialsData(object):
     def __init__(self, symbols=None):
@@ -510,6 +519,7 @@ class FinancialsData(object):
                     info['Description'] = description
                     info['Sector'] = prof[symbol]['sector']
                     info['Industry'] = prof[symbol]['industry']
+                    info['AvgSentiment2022'] = TwitterData().average_sentiment(symbol=symbol)
                     result = pd.concat([result, info])
             result.to_csv("symbol_fundamentals.csv")
         else:

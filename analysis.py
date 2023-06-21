@@ -108,9 +108,11 @@ class ClusterFinancials(FinancialsData):
         "PeRatio",
     ]
 
-    def __init__(self):
+    def __init__(self, sentiment: bool = False):
         FinancialsData.__init__(self)
         self.yf_data = self.get_yfinance_data()
+        if sentiment:
+            self.cluster_features.append('AvgSentiment2022')
         self.dimensions = StandardScaler().fit_transform(
             self.yf_data[self.cluster_features].values
         )
