@@ -17,6 +17,7 @@ from sklearn.metrics import mean_absolute_error as MAE, \
 from analysis import AnalysisTargets
 from data import EquityData
 from applied_stocks import applied_list
+from helpers import err_handle, merge_dataframes, remove_duplicate_index
 
 
 class EnsembleObjective(AnalysisTargets):
@@ -59,37 +60,61 @@ class VisualObjective(EnsembleObjective):
         dataset = self.data.copy()
         print(dataset)
 
-class TechnicalModel(EnsembleObjective):
+
+class Model(EnsembleObjective):
     random_state = 42
     technical_datasets = dict()
 
     def __init__(self):
         EnsembleObjective.__init__(self)
 
-    def create_technical_datasets(self):
-        technical_datasets = dict()
+    def create_model_datasets(self, objective: str or None = None,
+                              y_shift: int = -2):
+        '''
+        :param objective: if a technical indicator should be used it will pass into the loop
+        :param y_shift: the number of intervals to shift x data forward
+                        this is only used for creating the target variable
+                        or a dummy dataset
+
+                        it defaults to -2 as we would assume that 2 intervals forward would be
+                        predicting of the x instance currently
+        :return:
+        '''
+        datasets = dict()
         for equity, dataset in self.applied_datasets.items():
-            bb = BollingerBands(close=dataset['Close'])
-            # TODO IMO
-            dataset['bb_upper'] = bb.bollinger_hband()
-            dataset['bb_lower'] = bb.bollinger_lband()
-            dataset['bb_pband'] = bb.bollinger_pband()
-            dataset['bb_wband'] = bb.bollinger_wband()
+            if objective is not None:
+                dataset = self.create_objective(dataset, objective)
 
             applied_features = [x for x in dataset.columns
-                                if any(feature in x for feature in ['bb_', 'Close'])]
+                                if any(feature in x for feature in ['feature_', 'Close'])]
             dataset.dropna(inplace=True)
-            # TODO deviation rolling dependent shift feature
-            X, Y = dataset[applied_features], dataset['Deviation'].shift(-2)
+            # TODO deviation rolling dependent shift feature test
+
+            X, Y = dataset[applied_features], dataset['Deviation'].shift(y_shift)
             for col in applied_features:
                 X[col] = X[col].pct_change()
+
             X.dropna(inplace=True)
             Y.dropna(inplace=True)
             X = X.loc[X.index.isin(Y.index)]
             Y = Y.loc[Y.index.isin(X.index)]
+            X.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in X.index]
+            Y.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in Y.index]
 
-            technical_datasets[equity] = {'X': X, 'Y': Y}
-        return technical_datasets
+            datasets[equity] = {'X': X, 'Y': Y}
+        return datasets
+
+    def create_objective(self, dataset: pd.DataFrame,
+                         objective: str):
+        if objective == 'bollinger':
+            bb = BollingerBands(close=dataset['Close'])
+            # TODO IMO
+            dataset['feature_upper'] = bb.bollinger_hband()
+            dataset['feature_lower'] = bb.bollinger_lband()
+            dataset['feature_pband'] = bb.bollinger_pband()
+            dataset['feature_wband'] = bb.bollinger_wband()
+
+        return dataset
 
     @staticmethod
     def temporal_train_test_split(X: pd.DataFrame, Y: pd.DataFrame) -> tuple:
@@ -99,26 +124,170 @@ class TechnicalModel(EnsembleObjective):
             Y.loc[Y.index < split_index], Y.loc[Y.index >= split_index]
         return xtrain, xtest, ytrain, ytest
 
-    def run_analysis(self, additional_data: None):
-        # TODO pass params down
-        technical_datasets = self.create_technical_datasets()
-        # TODO if additional data is passed; merge here to show benefit;
-        # will need to know method to merge data as this is a dictionary by equity
+    # @staticmethod
+    # def create_x_y_temporal(datasets: dict) -> tuple:
+    #     # concatenate all of the dataframes from the dictionary into a single X, Y
+    #
+    #     return X, Y
 
-        # concatenate all of the dataframes from the dictionary into a single X, Y
-        X, Y = pd.DataFrame(), pd.DataFrame()
-        X = pd.concat([technical_datasets[equity]['X'] for equity in technical_datasets])
-        Y = pd.concat([technical_datasets[equity]['Y'] for equity in technical_datasets])
-        # build a train test instance
-        xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
+    def create_twitter_datasets(self):
+        sentiment_datasets = dict()
+        path = 'tweets-with-sentiment'
+        for filename in os.listdir(path):
+            try:
+                filename = f'{path}\\{filename}'
+                equity = filename.rsplit('\\')[-1].replace('.csv', '')
+                df = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
+                df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
+                df = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
+                sentiment_datasets[equity] = df
+            except Exception as e:
+                print(e)
+        return sentiment_datasets
 
-        model = LGBMRegressor(random_state=self.random_state)
-        model.fit(xtrain, ytrain)
-        pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
+    def apply_sentiment_data(self, data: pd.DataFrame,
+                             sentiment_data: dict):
+        try:
+            datasets = list()
+            for equity, df in sentiment_data.items():
+                try:
+                    df.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in df.index]
+                    datasets.append(df)
+                except: pass
+            dataset = pd.concat(datasets)
+            data = merge_dataframes([data, dataset])
+            return data
+        except Exception as e:
+            print(e)
+            return data
 
-        scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
-        baseline_scores = self.evaluate_baseline(technical_datasets)
-        improvement = self.determine_improvement(scores, baseline_scores)
+        # for equity in sentiment_data:
+        #     try:
+        #         data[equity]['X'] = pd.merge(pd.DataFrame(data[equity]['X']),
+        #                                          pd.DataFrame(sentiment_data[equity]),
+        #                                          left_index=True, right_index=True)
+        #     except:
+        #         pass
+        # return data
+
+    def simple_model(self, X: pd.DataFrame,
+                     Y: pd.DataFrame) -> dict:
+        try:
+            xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
+            xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
+            ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
+            xtest = xtest.loc[xtest.index.isin(ytest.index)]
+            ytest = ytest.loc[ytest.index.isin(xtest.index)]
+
+            model = LGBMRegressor(random_state=self.random_state)
+            model.fit(xtrain, ytrain)
+            pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
+            return {'xtrain': xtrain,
+                    'xtest': xtest,
+                    'ytrain': ytrain,
+                    'ytest': ytest,
+                    'pred': pred}
+        except Exception as e:
+            print(e)
+
+    def create_X_Y(self, datasets: dict):
+        X = pd.concat([dataset['X'] for equity, dataset in datasets.items()])
+        Y = pd.concat([dataset['Y'] for equity, dataset in datasets.items()])
+        return X, Y
+
+    @staticmethod
+    def evaluate_results(datasets: dict):
+        '''
+        Lazy way to rename each column from a prediction list
+        and print out the score of each
+
+        ! Requires a dict item for Actuals
+
+        :param datasets:
+        :return:
+        '''
+
+        for key, val in datasets.items():
+            datasets[key].columns = [val]
+
+        dataset = merge_dataframes(datasets.values())
+        dataset.dropna(inplace=True)
+
+        for col in dataset.columns:
+            print(col)
+            print(MAE(dataset[col], dataset['Actual']))
+
+    def run_analysis(self, sentiment_data: dict = None):
+        # no technical objective -> baseline model results
+        datasets = self.create_model_datasets()
+        X, Y = self.create_X_Y(datasets)
+        baseline = self.simple_model(X.copy(), Y.copy())
+
+        dummy_datasets = self.create_model_datasets(y_shift=3)
+        _, dummy_prediction = self.create_X_Y(dummy_datasets)
+
+        actuals = baseline['ytest'].sort_index()
+        actuals = remove_duplicate_index(actuals)
+
+        baseline_prediction = baseline['pred']
+        baseline_prediction = remove_duplicate_index(baseline_prediction)
+
+        bollinger_X = self.create_objective(X.copy(), 'bollinger')
+        bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+
+        sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
+        sentiment_dataset.dropna(inplace=True)
+        sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
+
+        applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
+        applied_dataset.dropna(inplace=True)
+        applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+
+        adf = merge_dataframes([dummy_prediction,
+                                sentiment_prediction,
+                                bollinger_prediction,
+                                applied_prediction,
+                                baseline_prediction,
+                                actuals])
+        adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+        adf.dropna(inplace=True)
+        for col in adf.columns:
+            print(col)
+            print(MAE(adf[col], adf['Actuals']))
+
+
+        feature_only = self.create_objective()
+
+
+        baseline_scores = self.evaluate_baseline(datasets)
+
+        X, Y = self.create_datasets()
+        baseline_data = self.simple_model(X, Y)
+
+        baseline_pred = baseline_data['pred'].resample('1d').mean()
+
+        # TODO
+        X, Y = self.create_datasets(additional_data)
+        advanced_data = self.simple_model(X, Y)
+
+        advanced_pred = advanced_data['pred'].resample('1d').mean()
+
+        target = Y.resample('1d').mean()
+        dataset = merge_dataframes([baseline_pred, advanced_pred, target]).dropna()
+
+        dataset.columns = ['Baseline', 'Sentiment', 'Deviation']
+        for col in dataset.columns:
+            print(col)
+            print(MAE(dataset[col], dataset['Deviation']))
+
+
+        #
+        #
+        # scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
+        # baseline_scores = self.evaluate_baseline(technical_datasets)
+        # improvement = self.determine_improvement(scores, baseline_scores)
+        #
+        # print(improvement)
 
     @staticmethod
     def determine_improvement(scoreset_a: dict, scoreset_b: dict) -> dict:
@@ -155,7 +324,11 @@ class TechnicalModel(EnsembleObjective):
 
 
 if __name__ == '__main__':
-    TechnicalModel().create_technical_datasets()
+    m = Model()
+    additional_feed = m.create_twitter_datasets()
+    preliminary = m.run_analysis(additional_feed)
+
+    # TechnicalModel().run_analysis()
 
 
 #
@@ -198,3 +371,54 @@ if __name__ == '__main__':
 # #
 # #
 # #     def analyze(self):
+
+
+    # def create_technical_datasets(self):
+    #     technical_datasets = dict()
+    #     for equity, dataset in self.applied_datasets.items():
+    #         bb = BollingerBands(close=dataset['Close'])
+    #         # TODO IMO
+    #         dataset['bb_upper'] = bb.bollinger_hband()
+    #         dataset['bb_lower'] = bb.bollinger_lband()
+    #         dataset['bb_pband'] = bb.bollinger_pband()
+    #         dataset['bb_wband'] = bb.bollinger_wband()
+    #
+    #         applied_features = [x for x in dataset.columns
+    #                             if any(feature in x for feature in ['bb_', 'Close'])]
+    #         dataset.dropna(inplace=True)
+    #         # TODO deviation rolling dependent shift feature
+    #         X, Y = dataset[applied_features].shift(-2), dataset['Deviation']
+    #         for col in applied_features:
+    #             X[col] = X[col].pct_change()
+    #         X.dropna(inplace=True)
+    #         Y.dropna(inplace=True)
+    #         X = X.loc[X.index.isin(Y.index)]
+    #         Y = Y.loc[Y.index.isin(X.index)]
+    #
+    #         technical_datasets[equity] = {'X': X, 'Y': Y}
+    #     return technical_datasets
+
+    # def create_datasets(self, additional_data: dict = None):
+    #     data = self.create_technical_datasets()
+    #
+    #     if additional_data is not None:
+    #         for equity in data:
+    #             try:
+    #                 data[equity]['X'] = pd.merge(pd.DataFrame(data[equity]['X']),
+    #                                                  pd.DataFrame(additional_data[equity]),
+    #                                                  left_index=True, right_index=True)
+    #             except:
+    #                 pass
+
+        # X = list()
+        # Y = list()
+        # for equity in data:
+        #     x_df = data[equity]['X']
+        #     x_df['Equity'] = equity
+        #     y_df = data[equity]['Y']
+        #     X.append(x_df)
+        #     Y.append(y_df)
+        #
+        # X = pd.concat(X)
+        # Y = pd.concat(Y)
+        # return X, Y
