@@ -500,9 +500,10 @@ class ClusterFinancials(FinancialsData):
         def cluster(
             self,
             max_iter: int = 100,
+            n_components: int = 4,
         ):
             gmm = GaussianMixture(
-                n_components=len(self.cluster_features),
+                n_components=n_components,
                 random_state=self.random_state,
                 max_iter=max_iter,
             ).fit(self.dimensions)
