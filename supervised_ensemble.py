@@ -10,6 +10,10 @@ from ta.trend import MACD
 
 # Models and SK
 from lightgbm import LGBMRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from xgboost import XGBRegressor
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error as MAE, \
     mean_absolute_percentage_error as MAPE, \
     mean_squared_error as MSE
@@ -101,6 +105,7 @@ class Model(EnsembleObjective):
             Y.dropna(inplace=True)
             X = X.loc[X.index.isin(Y.index)]
             Y = Y.loc[Y.index.isin(X.index)]
+
             X.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in X.index]
             Y.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in Y.index]
 
@@ -122,9 +127,16 @@ class Model(EnsembleObjective):
     @staticmethod
     def temporal_train_test_split(X: pd.DataFrame, Y: pd.DataFrame) -> tuple:
         # TODO include a validation split for LGBM or XGB
-        split_index = X.index[int(len(X.index) * .7)]
-        xtrain, xtest, ytrain, ytest = X.loc[X.index < split_index], X.loc[X.index >= split_index], \
-            Y.loc[Y.index < split_index], Y.loc[Y.index >= split_index]
+        X['DATE'] = [pd.Timestamp(idx.rsplit('_')[0]) for idx in X.index]
+        Y['DATE'] = [pd.Timestamp(idx.rsplit('_')[0]) for idx in Y.index]
+        rng = pd.date_range(min(X['DATE']), max(X['DATE']), freq='1d')
+        split_index = rng[int(len(rng) * .7)]
+        xtrain, xtest, ytrain, ytest = X.loc[X.DATE < split_index], X.loc[X.DATE >= split_index], \
+            Y.loc[Y.DATE < split_index], Y.loc[Y.DATE >= split_index]
+        xtrain.drop(columns=['DATE'], inplace=True)
+        xtest.drop(columns=['DATE'], inplace=True)
+        ytrain.drop(columns=['DATE'], inplace=True)
+        ytest.drop(columns=['DATE'], inplace=True)
         return xtrain, xtest, ytrain, ytest
 
     # @staticmethod
@@ -133,20 +145,26 @@ class Model(EnsembleObjective):
     #
     #     return X, Y
 
-    def create_twitter_datasets(self) -> dict:
+    def create_sentiment_datasets(self) -> dict:
         sentiment_datasets = dict()
-        path = 'tweets-with-sentiment'
-        for filename in os.listdir(path):
-            try:
-                filename = f'{path}\\{filename}'
-                equity = filename.rsplit('\\')[-1].replace('.csv', '')
-                df = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
-                df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
-                dataset = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
-                dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
-                sentiment_datasets[equity] = dataset
-            except Exception as e:
-                print(e)
+        paths = {'VADER': 'tweets-with-sentiment',
+                 'finBERT': 'tweets-with-sentiment-finBERT'}
+        for name, path in paths.items():
+            for filename in os.listdir(path):
+                try:
+                    filename = f'{path}\\{filename}'
+                    equity = filename.rsplit('\\')[-1].replace('.csv', '')
+                    df = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
+                    df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
+                    # TECHNICALLY BAD PRACTIVE AND SHOULD BE REFACTORED TO INIT ABOVE
+                    if name == 'VADER':
+                        dataset = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
+                        dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
+                        dataset.columns = ['VADER', 'COUNT']
+
+                    sentiment_datasets[equity] = dataset
+                except Exception as e:
+                    print(e)
         return sentiment_datasets
 
     def apply_sentiment_data(self, data: pd.DataFrame,
@@ -230,7 +248,7 @@ class Model(EnsembleObjective):
     @property
     def sentiment_dataset(self):
         if self._sentiment_dataset is None:
-            self._sentiment_dataset = self.create_twitter_datasets()
+            self._sentiment_dataset = self.create_sentiment_datasets()
         return self._sentiment_dataset
 
     def create_datasets(self, ensemble: any):
@@ -270,11 +288,6 @@ class Model(EnsembleObjective):
         return dataset
 
     def run_analysis(self):
-        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-        from sklearn.linear_model import LinearRegression
-        from xgboost import XGBRegressor
-        from sklearn.model_selection import RandomizedSearchCV
-
         models = {'linear': LinearRegression(),
                   'rf': RandomForestRegressor(),
                   'gb': GradientBoostingRegressor(),
@@ -283,12 +296,11 @@ class Model(EnsembleObjective):
 
         mae, mse = dict(), dict()
         for name, model in models.items():
+            print(name)
             try:
                 mae[name], mse[name] = dict(), dict()
                 dataset = self.create_datasets(model)
-                print(name)
                 for col in dataset.columns:
-                    print(col)
                     mae[name][col] = MAE(dataset[col], dataset['Actuals'])
                     mse[name][col] = MSE(dataset[col], dataset['Actuals'])
             except Exception as e:
