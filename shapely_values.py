@@ -29,9 +29,11 @@ def create_train_test(m: Model,
     Y = pd.DataFrame(Y)
     x_cols = X.columns
     y_cols = Y.columns
+
     dataset = merge_dataframes([X, Y]).dropna()
     X = pd.DataFrame(dataset[x_cols])
     Y = pd.DataFrame(dataset[y_cols])
+    
     xtrain, xtest, ytrain, ytest = m.temporal_train_test_split(X, Y)
     xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
     ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
