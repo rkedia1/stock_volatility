@@ -21,6 +21,9 @@ import logging
 from nltk.sentiment import SentimentIntensityAnalyzer
 import warnings
 
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers.utils.logging import set_verbosity_info
+import torch
 warnings.filterwarnings("ignore")
 
 
@@ -370,28 +373,61 @@ class TwitterData(object):
             result = pd.concat([result, pd.read_csv(f"tweets/{symbol}.csv")])
         return result
 
-    def sentiment_score(self):
-        if not os.path.exists("tweets-with-sentiment"):
-            os.makedirs("tweets-with-sentiment")
+    def sentiment_vader(self, folder: str = "tweets-with-sentiment-VADER"):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         tweets = self.get_tweets()
         for symbol in tweets["symbol"].unique():
             # import pdb; pdb.set_trace()
-            ticker = tweets[tweets["symbol"] == symbol]
-            analyzer = SentimentIntensityAnalyzer()
-            ticker["sentiment_score"] = ticker["content"].apply(
-                lambda x: analyzer.polarity_scores(x)["compound"]
-            )
-            ticker.to_csv(f"tweets-with-sentiment/{symbol}.csv")
+            if not os.path.exists(f"{folder}/{symbol}.csv"):
+                ticker = tweets[tweets["symbol"] == symbol]
+                analyzer = SentimentIntensityAnalyzer()
+                ticker["sentiment_score"] = ticker["content"].apply(
+                    lambda x: analyzer.polarity_scores(x)["compound"]
+                )
+                ticker.to_csv(f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False)
 
     def average_sentiment(self, symbol: str, start = date(2022,1,1), end = date(2022,12,31)):
-        if not os.path.exists("tweets-with-sentiment"):
+        if not os.path.exists("tweets-with-sentiment-VADER"):
             self.sentiment_score()
-        tweets_with_sentiment = pd.read_csv(f"tweets-with-sentiment/{symbol}.csv")
+        tweets_with_sentiment = pd.read_csv(f"tweets-with-sentiment-VADER/{symbol}.csv")
         tweets_with_sentiment['timestamp'] = pd.to_datetime(tweets_with_sentiment['timestamp'])
         tweets_with_sentiment = tweets_with_sentiment[(tweets_with_sentiment['timestamp'].dt.date >= start) & (tweets_with_sentiment['timestamp'].dt.date <= end)]
         average_sentiment = tweets_with_sentiment['sentiment_score'].mean()
         return average_sentiment
 
+    def sentiment_finbert(self, folder: str = "tweets-with-sentiment-finBERT"):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        symbols = self.get_symbol_list()
+        tokenizer = AutoTokenizer.from_pretrained("ProsusAI/finbert")
+        model = AutoModelForSequenceClassification.from_pretrained("ProsusAI/finbert")
+        curr_step = 0
+        for symbol in symbols:
+            curr_step+=1
+            print(f"[{curr_step}/{len(symbols)}] {symbol}:")
+            if not os.path.exists(f"{folder}/{symbol}.csv"):
+                tweets = pd.read_csv(f"tweets/{symbol}.csv")
+                contents = tweets.values
+                df = pd.DataFrame()
+                for i in tqdm(contents):
+                    inputs = tokenizer(i[1], padding=True, truncation=True, return_tensors='pt')
+                    outputs = model(**inputs)
+                    predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                    positive = predictions[:, 0].tolist()
+                    negative = predictions[:, 1].tolist()
+                    neutral = predictions[:, 2].tolist()
+
+                    table = {"symbol": i[2],
+                            "timestamp": i[0],
+                             "content": i[1],
+                             "Positive": positive,
+                             "Negative": negative,
+                             "Neutral": neutral}
+
+                    df = pd.concat([df, pd.DataFrame(table, columns=["symbol", "timestamp", "content", "Positive", "Negative", "Neutral"])])
+
+                df.to_csv(f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False)
 
 class FinancialsData(object):
     def __init__(self, symbols=None):
