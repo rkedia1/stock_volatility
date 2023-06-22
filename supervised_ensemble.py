@@ -41,7 +41,7 @@ class EnsembleObjective(AnalysisTargets):
         for stock in tqdm(self.stocks, desc='Building Datasets'):
             self.applied_datasets[stock] = self.create_target_dataset(stock)
 
-        with open('ensemble.pkl', 'wb') as handle:
+        with open(self.filename, 'wb') as handle:
             pickle.dump(self.applied_datasets, handle)
 
 
@@ -153,15 +153,17 @@ class Model(EnsembleObjective):
         try:
             datasets = list()
             for equity, df in sentiment_data.items():
+                df_copy = df.copy()
                 try:
-                    df.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in df.index]
-                    datasets.append(df)
-                except: pass
+                    df_copy.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in df_copy.index]
+                    datasets.append(df_copy)
+                except Exception as e:
+                    print(err_handle(e, __file__))
             dataset = pd.concat(datasets)
             data = merge_dataframes([data, dataset])
             return data
         except Exception as e:
-            print(e)
+            print(err_handle(e, __file__))
             return data
 
         # for equity in sentiment_data:
@@ -176,26 +178,26 @@ class Model(EnsembleObjective):
     def apply_model(self,
                      model: any,
                      X: pd.DataFrame,
-                     Y: pd.DataFrame,
-                     random_state: int) -> pred:
+                     Y: pd.DataFrame) -> pd.DataFrame:
         try:
+            X = pd.DataFrame(X)
+            Y = pd.DataFrame(Y)
+            x_cols = X.columns
+            y_cols = Y.columns
+            dataset = merge_dataframes([X, Y]).dropna()
+            X = pd.DataFrame(dataset[x_cols])
+            Y = pd.DataFrame(dataset[y_cols])
             xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
             xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
             ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
             xtest = xtest.loc[xtest.index.isin(ytest.index)]
             ytest = ytest.loc[ytest.index.isin(xtest.index)]
 
-            predictions = list()
-            for cv in range(10):
-                model = model(random_state=random_state)
-                model.fit(xtrain, ytrain)
-                pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
-                predictions.append(pred)
-
-            pred = merge_dataframes(predictions).mean()
+            model.fit(xtrain, ytrain)
+            pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
             return pred
         except Exception as e:
-            print(e)
+            print(err_handle(e, __file__))
 
     def create_X_Y(self, datasets: dict):
         X = pd.concat([dataset['X'] for equity, dataset in datasets.items()])
@@ -230,31 +232,28 @@ class Model(EnsembleObjective):
             self._sentiment_dataset = self.create_twitter_datasets()
         return self._sentiment_dataset
 
-    def create_datasets(self):
+    def create_datasets(self, ensemble: any):
         # no technical objective -> baseline model results
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
-        baseline = self.simple_model(X.copy(), Y.copy())
+        baseline_prediction = self.apply_model(ensemble, X.copy(), Y.copy())
+        baseline_prediction = remove_duplicate_index(baseline_prediction)
 
-        actuals = baseline['ytest'].sort_index()
-        actuals = remove_duplicate_index(actuals)
+        actuals = remove_duplicate_index(Y)
 
         dummy_datasets = self.create_model_datasets(y_shift=3)
         _, dummy_prediction = self.create_X_Y(dummy_datasets)
 
-        baseline_prediction = baseline['pred']
-        baseline_prediction = remove_duplicate_index(baseline_prediction)
-
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
-        bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+        bollinger_prediction = self.apply_model(ensemble, bollinger_X, Y.copy())
 
         sentiment_dataset = self.apply_sentiment_data(X.copy(), self.sentiment_dataset)
         sentiment_dataset.dropna(inplace=True)
-        sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
+        sentiment_prediction = self.apply_model(ensemble, sentiment_dataset, Y)
 
         applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), self.sentiment_dataset)
         applied_dataset.dropna(inplace=True)
-        applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+        applied_prediction = self.apply_model(ensemble, applied_dataset, Y)
 
         dataset = merge_dataframes([dummy_prediction,
                                     sentiment_prediction,
@@ -262,13 +261,34 @@ class Model(EnsembleObjective):
                                     applied_prediction,
                                     baseline_prediction,
                                     actuals])
-        dataset.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+        dataset.columns = ['Dummy', 'Sentiment',
+                           'Technical',
+                           'Sentiment Technical',
+                           'Baseline', 'Actuals']
         dataset.dropna(inplace=True)
         return dataset
 
     def run_analysis(self):
-        dataset = self.create_datasets()
-        print(dataset)
+        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+        from sklearn.linear_model import LinearRegression
+        from xgboost import XGBRegressor
+
+        models = {'linear': LinearRegression(),
+                  'rf': RandomForestRegressor(),
+                  'gb': GradientBoostingRegressor(),
+                  'lgbm': LGBMRegressor(),
+                  'xgb': XGBRegressor()}
+
+        for name, model in models.items():
+            try:
+                dataset = self.create_datasets(model)
+                print(name)
+                for col in dataset.columns:
+                    print(col)
+                    print(MAE(dataset[col], dataset['Actuals']))
+            except Exception as e:
+                print(err_handle(e, __file__))
+
 
 
     # def run_analysis(self, sentiment_data: dict = None):

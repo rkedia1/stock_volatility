@@ -178,3 +178,4 @@ REDDIT_PASSWORD=sjikpnex973
 .idea
 database.db
 ensemble.pkl
+applied_datasets.pkl
