@@ -2,6 +2,7 @@ import pandas as pd
 from tqdm import tqdm
 import pickle
 import os
+import random
 
 # Feature methods
 from ta.volatility import BollingerBands
@@ -64,6 +65,8 @@ class VisualObjective(EnsembleObjective):
 class Model(EnsembleObjective):
     random_state = 42
     technical_datasets = dict()
+
+    _sentiment_dataset = None
 
     def __init__(self):
         EnsembleObjective.__init__(self)
@@ -170,10 +173,11 @@ class Model(EnsembleObjective):
         #         pass
         # return data
 
-    def simple_model(self,
+    def apply_model(self,
                      model: any,
                      X: pd.DataFrame,
-                     Y: pd.DataFrame) -> dict:
+                     Y: pd.DataFrame,
+                     random_state: int) -> pred:
         try:
             xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
             xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
@@ -181,14 +185,15 @@ class Model(EnsembleObjective):
             xtest = xtest.loc[xtest.index.isin(ytest.index)]
             ytest = ytest.loc[ytest.index.isin(xtest.index)]
 
-            model = LGBMRegressor(random_state=self.random_state)
-            model.fit(xtrain, ytrain)
-            pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
-            return {'xtrain': xtrain,
-                    'xtest': xtest,
-                    'ytrain': ytrain,
-                    'ytest': ytest,
-                    'pred': pred}
+            predictions = list()
+            for cv in range(10):
+                model = model(random_state=random_state)
+                model.fit(xtrain, ytrain)
+                pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
+                predictions.append(pred)
+
+            pred = merge_dataframes(predictions).mean()
+            return pred
         except Exception as e:
             print(e)
 
@@ -219,17 +224,23 @@ class Model(EnsembleObjective):
             print(col)
             print(MAE(dataset[col], dataset['Actual']))
 
-    def run_analysis(self, sentiment_data: dict = None):
+    @property
+    def sentiment_dataset(self):
+        if self._sentiment_dataset is None:
+            self._sentiment_dataset = self.create_twitter_datasets()
+        return self._sentiment_dataset
+
+    def create_datasets(self):
         # no technical objective -> baseline model results
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
         baseline = self.simple_model(X.copy(), Y.copy())
 
-        dummy_datasets = self.create_model_datasets(y_shift=3)
-        _, dummy_prediction = self.create_X_Y(dummy_datasets)
-
         actuals = baseline['ytest'].sort_index()
         actuals = remove_duplicate_index(actuals)
+
+        dummy_datasets = self.create_model_datasets(y_shift=3)
+        _, dummy_prediction = self.create_X_Y(dummy_datasets)
 
         baseline_prediction = baseline['pred']
         baseline_prediction = remove_duplicate_index(baseline_prediction)
@@ -237,25 +248,66 @@ class Model(EnsembleObjective):
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
         bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
 
-        sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
+        sentiment_dataset = self.apply_sentiment_data(X.copy(), self.sentiment_dataset)
         sentiment_dataset.dropna(inplace=True)
         sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
 
-        applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
+        applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), self.sentiment_dataset)
         applied_dataset.dropna(inplace=True)
         applied_prediction = self.simple_model(applied_dataset, Y)['pred']
 
-        adf = merge_dataframes([dummy_prediction,
-                                sentiment_prediction,
-                                bollinger_prediction,
-                                applied_prediction,
-                                baseline_prediction,
-                                actuals])
-        adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
-        adf.dropna(inplace=True)
-        for col in adf.columns:
-            print(col)
-            print(MAE(adf[col], adf['Actuals']))
+        dataset = merge_dataframes([dummy_prediction,
+                                    sentiment_prediction,
+                                    bollinger_prediction,
+                                    applied_prediction,
+                                    baseline_prediction,
+                                    actuals])
+        dataset.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+        dataset.dropna(inplace=True)
+        return dataset
+
+    def run_analysis(self):
+        dataset = self.create_datasets()
+        print(dataset)
+
+
+    # def run_analysis(self, sentiment_data: dict = None):
+    #     # no technical objective -> baseline model results
+    #     datasets = self.create_model_datasets()
+    #     X, Y = self.create_X_Y(datasets)
+    #     baseline = self.simple_model(X.copy(), Y.copy())
+    #
+    #     dummy_datasets = self.create_model_datasets(y_shift=3)
+    #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
+    #
+    #     actuals = baseline['ytest'].sort_index()
+    #     actuals = remove_duplicate_index(actuals)
+    #
+    #     baseline_prediction = baseline['pred']
+    #     baseline_prediction = remove_duplicate_index(baseline_prediction)
+    #
+    #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
+    #     bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+    #
+    #     sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
+    #     sentiment_dataset.dropna(inplace=True)
+    #     sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
+    #
+    #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
+    #     applied_dataset.dropna(inplace=True)
+    #     applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+    #
+    #     adf = merge_dataframes([dummy_prediction,
+    #                             sentiment_prediction,
+    #                             bollinger_prediction,
+    #                             applied_prediction,
+    #                             baseline_prediction,
+    #                             actuals])
+    #     adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+    #     adf.dropna(inplace=True)
+    #     for col in adf.columns:
+    #         print(col)
+    #         print(MAE(adf[col], adf['Actuals']))
 
 
         feature_only = self.create_objective()
@@ -324,11 +376,9 @@ class Model(EnsembleObjective):
         return baseline_scores
 
 
-
 if __name__ == '__main__':
     m = Model()
-    additional_feed = m.create_twitter_datasets()
-    preliminary = m.run_analysis(additional_feed)
+    m.run_analysis()
 
     # TechnicalModel().run_analysis()
 
