@@ -33,7 +33,7 @@ def create_train_test(m: Model,
     dataset = merge_dataframes([X, Y]).dropna()
     X = pd.DataFrame(dataset[x_cols])
     Y = pd.DataFrame(dataset[y_cols])
-    
+
     xtrain, xtest, ytrain, ytest = m.temporal_train_test_split(X, Y)
     xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
     ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
@@ -51,3 +51,7 @@ if __name__ == '__main__':
     # CHOOSE whatever model; setting RF
     ensemble = RandomForestRegressor()
 
+    xtrain, xtest, ytrain, ytest = create_train_test(m, datasets['basic_sentiment'], datasets['Y'])
+
+    ensemble.fit(xtrain, ytrain)
+    pred = pd.DataFrame(ensemble.predict(xtest), index=xtest.index)
