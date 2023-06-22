@@ -142,8 +142,9 @@ class Model(EnsembleObjective):
                 equity = filename.rsplit('\\')[-1].replace('.csv', '')
                 df = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
                 df.index = [pd.Timestamp(x).replace(tzinfo=None) for x in df.index]
-                df = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
-                sentiment_datasets[equity] = df
+                dataset = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
+                dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
+                sentiment_datasets[equity] = dataset
             except Exception as e:
                 print(e)
         return sentiment_datasets
@@ -272,6 +273,7 @@ class Model(EnsembleObjective):
         from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
         from sklearn.linear_model import LinearRegression
         from xgboost import XGBRegressor
+        from sklearn.model_selection import RandomizedSearchCV
 
         models = {'linear': LinearRegression(),
                   'rf': RandomForestRegressor(),
@@ -279,89 +281,94 @@ class Model(EnsembleObjective):
                   'lgbm': LGBMRegressor(),
                   'xgb': XGBRegressor()}
 
+        mae, mse = dict(), dict()
         for name, model in models.items():
             try:
+                mae[name], mse[name] = dict(), dict()
                 dataset = self.create_datasets(model)
                 print(name)
                 for col in dataset.columns:
                     print(col)
-                    print(MAE(dataset[col], dataset['Actuals']))
+                    mae[name][col] = MAE(dataset[col], dataset['Actuals'])
+                    mse[name][col] = MSE(dataset[col], dataset['Actuals'])
             except Exception as e:
                 print(err_handle(e, __file__))
 
+        return {'mae': mae, 'mse': mse}
 
-
-    # def run_analysis(self, sentiment_data: dict = None):
-    #     # no technical objective -> baseline model results
-    #     datasets = self.create_model_datasets()
-    #     X, Y = self.create_X_Y(datasets)
-    #     baseline = self.simple_model(X.copy(), Y.copy())
     #
-    #     dummy_datasets = self.create_model_datasets(y_shift=3)
-    #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
     #
-    #     actuals = baseline['ytest'].sort_index()
-    #     actuals = remove_duplicate_index(actuals)
+    # # def run_analysis(self, sentiment_data: dict = None):
+    # #     # no technical objective -> baseline model results
+    # #     datasets = self.create_model_datasets()
+    # #     X, Y = self.create_X_Y(datasets)
+    # #     baseline = self.simple_model(X.copy(), Y.copy())
+    # #
+    # #     dummy_datasets = self.create_model_datasets(y_shift=3)
+    # #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
+    # #
+    # #     actuals = baseline['ytest'].sort_index()
+    # #     actuals = remove_duplicate_index(actuals)
+    # #
+    # #     baseline_prediction = baseline['pred']
+    # #     baseline_prediction = remove_duplicate_index(baseline_prediction)
+    # #
+    # #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
+    # #     bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+    # #
+    # #     sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
+    # #     sentiment_dataset.dropna(inplace=True)
+    # #     sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
+    # #
+    # #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
+    # #     applied_dataset.dropna(inplace=True)
+    # #     applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+    # #
+    # #     adf = merge_dataframes([dummy_prediction,
+    # #                             sentiment_prediction,
+    # #                             bollinger_prediction,
+    # #                             applied_prediction,
+    # #                             baseline_prediction,
+    # #                             actuals])
+    # #     adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+    # #     adf.dropna(inplace=True)
+    # #     for col in adf.columns:
+    # #         print(col)
+    # #         print(MAE(adf[col], adf['Actuals']))
     #
-    #     baseline_prediction = baseline['pred']
-    #     baseline_prediction = remove_duplicate_index(baseline_prediction)
     #
-    #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
-    #     bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+    #     feature_only = self.create_objective()
     #
-    #     sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
-    #     sentiment_dataset.dropna(inplace=True)
-    #     sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
     #
-    #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
-    #     applied_dataset.dropna(inplace=True)
-    #     applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+    #     baseline_scores = self.evaluate_baseline(datasets)
     #
-    #     adf = merge_dataframes([dummy_prediction,
-    #                             sentiment_prediction,
-    #                             bollinger_prediction,
-    #                             applied_prediction,
-    #                             baseline_prediction,
-    #                             actuals])
-    #     adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
-    #     adf.dropna(inplace=True)
-    #     for col in adf.columns:
+    #     X, Y = self.create_datasets()
+    #     baseline_data = self.simple_model(X, Y)
+    #
+    #     baseline_pred = baseline_data['pred'].resample('1d').mean()
+    #
+    #     # TODO
+    #     X, Y = self.create_datasets(additional_data)
+    #     advanced_data = self.simple_model(X, Y)
+    #
+    #     advanced_pred = advanced_data['pred'].resample('1d').mean()
+    #
+    #     target = Y.resample('1d').mean()
+    #     dataset = merge_dataframes([baseline_pred, advanced_pred, target]).dropna()
+    #
+    #     dataset.columns = ['Baseline', 'Sentiment', 'Deviation']
+    #     for col in dataset.columns:
     #         print(col)
-    #         print(MAE(adf[col], adf['Actuals']))
-
-
-        feature_only = self.create_objective()
-
-
-        baseline_scores = self.evaluate_baseline(datasets)
-
-        X, Y = self.create_datasets()
-        baseline_data = self.simple_model(X, Y)
-
-        baseline_pred = baseline_data['pred'].resample('1d').mean()
-
-        # TODO
-        X, Y = self.create_datasets(additional_data)
-        advanced_data = self.simple_model(X, Y)
-
-        advanced_pred = advanced_data['pred'].resample('1d').mean()
-
-        target = Y.resample('1d').mean()
-        dataset = merge_dataframes([baseline_pred, advanced_pred, target]).dropna()
-
-        dataset.columns = ['Baseline', 'Sentiment', 'Deviation']
-        for col in dataset.columns:
-            print(col)
-            print(MAE(dataset[col], dataset['Deviation']))
-
-
-        #
-        #
-        # scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
-        # baseline_scores = self.evaluate_baseline(technical_datasets)
-        # improvement = self.determine_improvement(scores, baseline_scores)
-        #
-        # print(improvement)
+    #         print(MAE(dataset[col], dataset['Deviation']))
+    #
+    #
+    #     #
+    #     #
+    #     # scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
+    #     # baseline_scores = self.evaluate_baseline(technical_datasets)
+    #     # improvement = self.determine_improvement(scores, baseline_scores)
+    #     #
+    #     # print(improvement)
 
     @staticmethod
     def determine_improvement(scoreset_a: dict, scoreset_b: dict) -> dict:
