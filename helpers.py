@@ -78,10 +78,17 @@ def time_series_split(X: pd.DataFrame, Y: pd.DataFrame, n_splits: int = 5):
     Y = Y.sort_values(by=["date", "ticker"])
     dates = X['date'].unique()
     for train_index, test_index in tscv.split(dates):
-        train_date_start = dates[train_index[0]].date()
-        train_date_end = dates[train_index[-1]].date()
-        test_date_start = dates[test_index[0]].date()
-        test_date_end = dates[test_index[-1]].date()
+
+        # MODIFICATION
+        # train_date_start = dates[train_index[0]].date()
+        train_date_start = pd.Timestamp(dates[train_index[0]])
+        # train_date_end = dates[train_index[-1]].date()
+        train_date_end = pd.Timestamp(dates[train_index[-1]])
+        # test_date_start = dates[test_index[0]].date()
+        test_date_start = pd.Timestamp(dates[test_index[0]])
+        # test_date_end = dates[test_index[-1]].date()
+        test_date_end = pd.Timestamp(dates[test_index[-1]])
+
         X_train = X[(X['date'].dt.date >= train_date_start) & (X['date'].dt.date <= train_date_end)][X.columns[:2]]
         Y_train = Y[(Y['date'].dt.date >= train_date_start) & (Y['date'].dt.date <= train_date_end)][Y.columns[:1]]
         X_test = X[(X['date'].dt.date >= test_date_start) & (X['date'].dt.date <= test_date_end)][X.columns[:2]]

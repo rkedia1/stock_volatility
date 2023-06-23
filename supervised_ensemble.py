@@ -22,7 +22,7 @@ from sklearn.metrics import mean_absolute_error as MAE, \
 from analysis import AnalysisTargets
 from data import EquityData
 from applied_stocks import applied_list
-from helpers import err_handle, merge_dataframes, remove_duplicate_index
+from helpers import err_handle, merge_dataframes, remove_duplicate_index, time_series_split
 
 
 class EnsembleObjective(AnalysisTargets):
@@ -146,9 +146,9 @@ class Model(EnsembleObjective):
     #     return X, Y
 
     def create_sentiment_datasets(self) -> dict:
-        sentiment_datasets = dict()
-        paths = {'VADER': 'tweets-with-sentiment',
+        paths = {'VADER': 'tweets-with-sentiment-VADER',
                  'finBERT': 'tweets-with-sentiment-finBERT'}
+        sentiment_datasets = {key: dict() for key in paths.keys()}
         for name, path in paths.items():
             for filename in os.listdir(path):
                 try:
@@ -161,11 +161,20 @@ class Model(EnsembleObjective):
                         dataset = pd.DataFrame(df['sentiment_score'].resample('1d').mean().ffill())
                         dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
                         dataset.columns = ['VADER', 'COUNT']
+                    else:
+                        dataset = pd.DataFrame(df[["Positive","Negative","Neutral"]].resample('1d').mean().ffill())
+                        # dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
+                        # dataset.columns = ['VADER', 'COUNT']
 
-                    sentiment_datasets[equity] = dataset
+                    sentiment_datasets[name][equity] = dataset
                 except Exception as e:
                     print(e)
-        return sentiment_datasets
+
+        datasets = dict()
+        for equity in sentiment_datasets['VADER']:
+            datasets[equity] = merge_dataframes([sentiment_datasets['VADER'][equity],
+                                                 sentiment_datasets['finBERT'][equity]])
+        return datasets
 
     def apply_sentiment_data(self, data: pd.DataFrame,
                              sentiment_data: dict):
@@ -206,6 +215,10 @@ class Model(EnsembleObjective):
             dataset = merge_dataframes([X, Y]).dropna()
             X = pd.DataFrame(dataset[x_cols])
             Y = pd.DataFrame(dataset[y_cols])
+
+            for xtrain, xtest, ytrain, ytest in time_series_split(X, Y):
+                print(xtrain)
+
             xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
             xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
             ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
@@ -255,6 +268,9 @@ class Model(EnsembleObjective):
         # no technical objective -> baseline model results
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
+
+        # TODO LOOP HERE ON SUBSETS
+
         baseline_prediction = self.apply_model(ensemble, X.copy(), Y.copy())
         baseline_prediction = remove_duplicate_index(baseline_prediction)
 
