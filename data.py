@@ -24,6 +24,7 @@ import warnings
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers.utils.logging import set_verbosity_info
 import torch
+
 warnings.filterwarnings("ignore")
 
 
@@ -385,15 +386,24 @@ class TwitterData(object):
                 ticker["sentiment_score"] = ticker["content"].apply(
                     lambda x: analyzer.polarity_scores(x)["compound"]
                 )
-                ticker.to_csv(f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False)
+                ticker.to_csv(
+                    f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False
+                )
 
-    def average_sentiment(self, symbol: str, start = date(2022,1,1), end = date(2022,12,31)):
+    def average_sentiment(
+        self, symbol: str, start=date(2022, 1, 1), end=date(2022, 12, 31)
+    ):
         if not os.path.exists("tweets-with-sentiment-VADER"):
-            self.sentiment_score()
+            self.sentiment_vader()
         tweets_with_sentiment = pd.read_csv(f"tweets-with-sentiment-VADER/{symbol}.csv")
-        tweets_with_sentiment['timestamp'] = pd.to_datetime(tweets_with_sentiment['timestamp'])
-        tweets_with_sentiment = tweets_with_sentiment[(tweets_with_sentiment['timestamp'].dt.date >= start) & (tweets_with_sentiment['timestamp'].dt.date <= end)]
-        average_sentiment = tweets_with_sentiment['sentiment_score'].mean()
+        tweets_with_sentiment["timestamp"] = pd.to_datetime(
+            tweets_with_sentiment["timestamp"]
+        )
+        tweets_with_sentiment = tweets_with_sentiment[
+            (tweets_with_sentiment["timestamp"].dt.date >= start)
+            & (tweets_with_sentiment["timestamp"].dt.date <= end)
+        ]
+        average_sentiment = tweets_with_sentiment["sentiment_score"].mean()
         return average_sentiment
 
     def sentiment_finbert(self, folder: str = "tweets-with-sentiment-finBERT"):
@@ -404,30 +414,52 @@ class TwitterData(object):
         model = AutoModelForSequenceClassification.from_pretrained("ProsusAI/finbert")
         curr_step = 0
         for symbol in symbols:
-            curr_step+=1
-            print(f"[{curr_step}/{len(symbols)}] {symbol}:")
+            curr_step += 1
             if not os.path.exists(f"{folder}/{symbol}.csv"):
+                print(f"[{curr_step}/{len(symbols)}] {symbol}:")
                 tweets = pd.read_csv(f"tweets/{symbol}.csv")
                 contents = tweets.values
                 df = pd.DataFrame()
                 for i in tqdm(contents):
-                    inputs = tokenizer(i[1], padding=True, truncation=True, return_tensors='pt')
+                    inputs = tokenizer(
+                        i[1], padding=True, truncation=True, return_tensors="pt"
+                    )
                     outputs = model(**inputs)
                     predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
                     positive = predictions[:, 0].tolist()
                     negative = predictions[:, 1].tolist()
                     neutral = predictions[:, 2].tolist()
 
-                    table = {"symbol": i[2],
-                            "timestamp": i[0],
-                             "content": i[1],
-                             "Positive": positive,
-                             "Negative": negative,
-                             "Neutral": neutral}
+                    table = {
+                        "symbol": i[2],
+                        "timestamp": i[0],
+                        "content": i[1],
+                        "Positive": positive,
+                        "Negative": negative,
+                        "Neutral": neutral,
+                    }
 
-                    df = pd.concat([df, pd.DataFrame(table, columns=["symbol", "timestamp", "content", "Positive", "Negative", "Neutral"])])
+                    df = pd.concat(
+                        [
+                            df,
+                            pd.DataFrame(
+                                table,
+                                columns=[
+                                    "symbol",
+                                    "timestamp",
+                                    "content",
+                                    "Positive",
+                                    "Negative",
+                                    "Neutral",
+                                ],
+                            ),
+                        ]
+                    )
 
-                df.to_csv(f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False)
+                df.to_csv(
+                    f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False
+                )
+
 
 class FinancialsData(object):
     def __init__(self, symbols=None):
@@ -546,16 +578,16 @@ class FinancialsData(object):
                         )
                         / (revenue_change.iloc[-2].loc["TotalRevenue"])
                     ) * 100
-                    price = ticker.history(
-                        start=info.iloc[0]["asOfDate"]
-                    )
-                    price = price.iloc[0]['close']
-                    info['PeRatio'] = price/info['DilutedEPS']
+                    price = ticker.history(start=info.iloc[0]["asOfDate"])
+                    price = price.iloc[0]["close"]
+                    info["PeRatio"] = price / info["DilutedEPS"]
                     prof = ticker.asset_profile
-                    info['Description'] = description
-                    info['Sector'] = prof[symbol]['sector']
-                    info['Industry'] = prof[symbol]['industry']
-                    info['AvgSentiment2022'] = TwitterData().average_sentiment(symbol=symbol)
+                    info["Description"] = description
+                    info["Sector"] = prof[symbol]["sector"]
+                    info["Industry"] = prof[symbol]["industry"]
+                    info["AvgSentiment2022"] = TwitterData().average_sentiment(
+                        symbol=symbol
+                    )
                     result = pd.concat([result, info])
             result.to_csv("symbol_fundamentals.csv")
         else:
@@ -566,8 +598,6 @@ class FinancialsData(object):
 if __name__ == "__main__":
     EquityData().update_data()
     TwitterData().get_tweets()
+    TwitterData().sentiment_finbert()
+    TwitterData().sentiment_vader()
     FinancialsData().get_yfinance_data()
-
-# x = TwitterData()
-
-# print(x.sentiment_score())
