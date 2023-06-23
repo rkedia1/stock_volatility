@@ -1,9 +1,13 @@
+
 import pandas as pd
 
 from supervised_ensemble import Model
 
 from helpers import merge_dataframes
 from sklearn.ensemble import RandomForestRegressor
+
+import shap
+import numpy as np
 
 
 def create_datasets(m: Model):
@@ -43,6 +47,7 @@ def create_train_test(m: Model,
     return xtrain, xtest, ytrain, ytest
 
 
+
 if __name__ == '__main__':
     m = Model()
     datasets = create_datasets(m)
@@ -55,3 +60,10 @@ if __name__ == '__main__':
 
     ensemble.fit(xtrain, ytrain)
     pred = pd.DataFrame(ensemble.predict(xtest), index=xtest.index)
+
+
+    explainer = shap.Explainer(ensemble)
+    shap_values = explainer.shap_values(xtest)
+
+    shap.summary_plot(shap_values, xtest, feature_names = xtest.columns)
+
