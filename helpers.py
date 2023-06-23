@@ -83,9 +83,9 @@ def time_series_split(X: pd.DataFrame, Y: pd.DataFrame, n_splits: int = 5):
         test_date_start = dates[test_index[0]].date()
         test_date_end = dates[test_index[-1]].date()
         X_train = X[(X['date'].dt.date >= train_date_start) & (X['date'].dt.date <= train_date_end)][X.columns[:2]]
-        Y_train = Y[(Y['date'].dt.date >= train_date_start) & (Y['date'].dt.date <= train_date_end)][Y.columns[:2]]
+        Y_train = Y[(Y['date'].dt.date >= train_date_start) & (Y['date'].dt.date <= train_date_end)][Y.columns[:1]]
         X_test = X[(X['date'].dt.date >= test_date_start) & (X['date'].dt.date <= test_date_end)][X.columns[:2]]
-        Y_test = Y[(Y['date'].dt.date >= test_date_start) & (Y['date'].dt.date <= test_date_end)][Y.columns[:2]]
+        Y_test = Y[(Y['date'].dt.date >= test_date_start) & (Y['date'].dt.date <= test_date_end)][Y.columns[:1]]
         yield X_train, Y_train, X_test, Y_test
 
 
