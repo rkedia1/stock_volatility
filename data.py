@@ -589,7 +589,7 @@ class FinancialsData(object):
                         symbol=symbol
                     )
                     result = pd.concat([result, info])
-            result = result[['Description','Sector','Industry','asOfDate','DilutedEPS','NormalizedEBITDA','TotalRevenue','MarketCap','PriceYoY2021','PriceYoY2022','RevenueYoY2021','RevenueYoY2022','PeRatio']]
+            result = result[['Description','Sector','Industry','asOfDate','DilutedEPS','NormalizedEBITDA','TotalRevenue','MarketCap','PriceYoY2021','PriceYoY2022','RevenueYoY2021','RevenueYoY2022','PeRatio', 'AvgSentiment2022']]
             result.to_csv("symbol_fundamentals.csv")
         else:
             result = pd.read_csv("symbol_fundamentals.csv")
