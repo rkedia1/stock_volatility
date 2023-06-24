@@ -215,7 +215,6 @@ class Model(EnsembleObjective):
                       X: pd.DataFrame,
                       Y: pd.DataFrame):
         i = 0
-        X, Y = self.ensure_consistency(X, Y)
         results = {'mae': list(),
                    'mse': list()}
         for xtrain, xtest, ytrain, ytest in time_series_split(X, Y):
@@ -232,6 +231,7 @@ class Model(EnsembleObjective):
                     pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
                 # upon being a string; we just assume the output is equal to the xtest (dummy output)
                 else:
+                    # in this instance; we are not applying a model and it is a dummy output
                     pred = xtest
                 mae, mse = self.define_accuracy(pred, ytest)
                 results['mae'].append(mae)
@@ -305,12 +305,11 @@ class Model(EnsembleObjective):
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
 
-
         baseline_results = self.apply_model(ensemble, X.copy(), Y.copy())
 
         dummy_datasets = self.create_model_datasets(y_shift=3)
         _, dummy_prediction = self.create_X_Y(dummy_datasets)
-        dummy_results = self.evaluate_model('DUMMY', X, dummy_prediction)
+        dummy_results = self.evaluate_model('DUMMY', dummy_prediction, Y)
 
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
         bollinger_prediction = self.apply_model(ensemble, bollinger_X, Y.copy())
