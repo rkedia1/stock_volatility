@@ -214,6 +214,7 @@ class Model(EnsembleObjective):
 
     def evaluate_model(self,
                       model: any,
+                      dataset_type: str,
                       X: pd.DataFrame,
                       Y: pd.DataFrame):
         i = 0
@@ -221,7 +222,7 @@ class Model(EnsembleObjective):
                    'mse': list()}
 
         n_splits = 5
-        pbar = tqdm(total=n_splits, desc=model.__str__() + f' window_size: {self.deviation_window}')
+        pbar = tqdm(total=n_splits, desc=f'{model.__str__()} - {dataset_type} - window_size: {self.deviation_window}')
         for xtrain, xtest, ytrain, ytest in time_series_split(X, Y, n_splits):
             try:
                 xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
@@ -239,7 +240,7 @@ class Model(EnsembleObjective):
                 print(err_handle(e, __file__))
             pbar.update(1)
 
-        print(model, results)
+        print(model, dataset_type, results)
         results = {key: sum(vals) / len(vals) for key, vals in results.items()}
         return results
 
@@ -257,11 +258,12 @@ class Model(EnsembleObjective):
 
     def apply_model(self,
                      model: any,
+                     dataset_type: str,
                      X: pd.DataFrame,
                      Y: pd.DataFrame) -> dict:
         try:
             X, Y = self.ensure_consistency(X, Y)
-            results = self.evaluate_model(model, X, Y)
+            results = self.evaluate_model(model, dataset_type, X, Y)
             return results
         except Exception as e:
             print(err_handle(e, __file__))
@@ -304,7 +306,7 @@ class Model(EnsembleObjective):
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
 
-        baseline_results = self.apply_model(ensemble, X.copy(), Y.copy())
+        baseline_results = self.apply_model(ensemble, 'baseline', X.copy(), Y.copy())
 
         # dummy_datasets = self.create_model_datasets(y_shift=3)
         # _, dummy_prediction = self.create_X_Y(dummy_datasets)
@@ -314,15 +316,15 @@ class Model(EnsembleObjective):
         dummy_results = {'mae': .6813, 'mse': .8239}
 
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
-        bollinger_results = self.apply_model(ensemble, bollinger_X, Y.copy())
+        bollinger_results = self.apply_model(ensemble, 'technical', bollinger_X, Y.copy())
 
         sentiment_dataset = self.apply_sentiment_data(X.copy(), self.sentiment_dataset)
         sentiment_dataset.dropna(inplace=True)
-        sentiment_results = self.apply_model(ensemble, sentiment_dataset, Y)
+        sentiment_results = self.apply_model(ensemble, 'sentiment', sentiment_dataset, Y)
 
         applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), self.sentiment_dataset)
         applied_dataset.dropna(inplace=True)
-        combined_results = self.apply_model(ensemble, applied_dataset, Y)
+        combined_results = self.apply_model(ensemble, 'combined', applied_dataset, Y)
 
         dataset = {'dummy': dummy_results,
                    'baseline': baseline_results,
