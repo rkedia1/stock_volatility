@@ -17,6 +17,8 @@ from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error as MAE, \
     mean_absolute_percentage_error as MAPE, \
     mean_squared_error as MSE
+from statsmodels.nonparametric.smoothers_lowess import lowess
+from sklearn.neural_network import MLPRegressor
 
 # Local methods
 from analysis import AnalysisTargets
@@ -162,9 +164,9 @@ class Model(EnsembleObjective):
                         dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
                         dataset.columns = ['VADER', 'COUNT']
                     else:
-                        dataset = pd.DataFrame(df[["Positive","Negative","Neutral"]].resample('1d').mean().ffill())
-                        # dataset['count'] = pd.DataFrame(df['content'].resample('1d').count().ffill())
-                        # dataset.columns = ['VADER', 'COUNT']
+                        dataset = pd.DataFrame(df[["Positive", "Negative", "Neutral"]].resample('1d').mean().ffill())
+                        # dataset['Score'] = max(features)
+                        dataset['Absolute Score'] = dataset['Positive'] - dataset['Negative']
 
                     sentiment_datasets[name][equity] = dataset
                 except Exception as e:
@@ -203,31 +205,65 @@ class Model(EnsembleObjective):
         #         pass
         # return data
 
+    def define_accuracy(self, pred: pd.DataFrame, ytest: pd.DataFrame):
+        mae = MAE(pred, ytest)
+        mse = MSE(pred, ytest)
+        return mae, mse
+
+    def evaluate_model(self,
+                      model: any,
+                      X: pd.DataFrame,
+                      Y: pd.DataFrame):
+        i = 0
+        X, Y = self.ensure_consistency(X, Y)
+        results = {'mae': list(),
+                   'mse': list()}
+        for xtrain, xtest, ytrain, ytest in time_series_split(X, Y):
+            print(i)
+            try:
+                xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
+                ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
+                xtest = xtest.loc[xtest.index.isin(ytest.index)]
+                ytest = ytest.loc[ytest.index.isin(xtest.index)]
+
+                # this will be applied in most instances; unless we say DUMMY eg
+                if not isinstance(model, str):
+                    model.fit(xtrain, ytrain)
+                    pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
+                # upon being a string; we just assume the output is equal to the xtest (dummy output)
+                else:
+                    pred = xtest
+                mae, mse = self.define_accuracy(pred, ytest)
+                results['mae'].append(mae)
+                results['mse'].append(mse)
+            except Exception as e:
+                print(err_handle(e, __file__))
+            i += 1
+
+        print(model, results)
+        results = {key: sum(vals) / len(vals) for key, vals in results.items()}
+        return results
+
+    def ensure_consistency(self,
+                           X: pd.DataFrame,
+                           Y: pd.DataFrame):
+        X = pd.DataFrame(X)
+        Y = pd.DataFrame(Y)
+        x_cols = X.columns
+        y_cols = Y.columns
+        dataset = merge_dataframes([X, Y]).dropna()
+        X = pd.DataFrame(dataset[x_cols])
+        Y = pd.DataFrame(dataset[y_cols])
+        return X, Y
+
     def apply_model(self,
                      model: any,
                      X: pd.DataFrame,
-                     Y: pd.DataFrame) -> pd.DataFrame:
+                     Y: pd.DataFrame) -> dict:
         try:
-            X = pd.DataFrame(X)
-            Y = pd.DataFrame(Y)
-            x_cols = X.columns
-            y_cols = Y.columns
-            dataset = merge_dataframes([X, Y]).dropna()
-            X = pd.DataFrame(dataset[x_cols])
-            Y = pd.DataFrame(dataset[y_cols])
-
-            for xtrain, xtest, ytrain, ytest in time_series_split(X, Y):
-                print(xtrain)
-
-            xtrain, xtest, ytrain, ytest = self.temporal_train_test_split(X, Y)
-            xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
-            ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
-            xtest = xtest.loc[xtest.index.isin(ytest.index)]
-            ytest = ytest.loc[ytest.index.isin(xtest.index)]
-
-            model.fit(xtrain, ytrain)
-            pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
-            return pred
+            X, Y = self.ensure_consistency(X, Y)
+            results = self.evaluate_model(model, X, Y)
+            return results
         except Exception as e:
             print(err_handle(e, __file__))
 
@@ -269,15 +305,12 @@ class Model(EnsembleObjective):
         datasets = self.create_model_datasets()
         X, Y = self.create_X_Y(datasets)
 
-        # TODO LOOP HERE ON SUBSETS
 
-        baseline_prediction = self.apply_model(ensemble, X.copy(), Y.copy())
-        baseline_prediction = remove_duplicate_index(baseline_prediction)
-
-        actuals = remove_duplicate_index(Y)
+        baseline_results = self.apply_model(ensemble, X.copy(), Y.copy())
 
         dummy_datasets = self.create_model_datasets(y_shift=3)
         _, dummy_prediction = self.create_X_Y(dummy_datasets)
+        dummy_results = self.evaluate_model('DUMMY', X, dummy_prediction)
 
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
         bollinger_prediction = self.apply_model(ensemble, bollinger_X, Y.copy())
@@ -303,12 +336,51 @@ class Model(EnsembleObjective):
         dataset.dropna(inplace=True)
         return dataset
 
+    # def create_datasets(self, ensemble: any):
+    #     # no technical objective -> baseline model results
+    #     datasets = self.create_model_datasets()
+    #     X, Y = self.create_X_Y(datasets)
+    #
+    #
+    #     baseline_prediction = self.apply_model(ensemble, X.copy(), Y.copy())
+    #     baseline_prediction = remove_duplicate_index(baseline_prediction)
+    #
+    #     actuals = remove_duplicate_index(Y)
+    #
+    #     dummy_datasets = self.create_model_datasets(y_shift=3)
+    #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
+    #
+    #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
+    #     bollinger_prediction = self.apply_model(ensemble, bollinger_X, Y.copy())
+    #
+    #     sentiment_dataset = self.apply_sentiment_data(X.copy(), self.sentiment_dataset)
+    #     sentiment_dataset.dropna(inplace=True)
+    #     sentiment_prediction = self.apply_model(ensemble, sentiment_dataset, Y)
+    #
+    #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), self.sentiment_dataset)
+    #     applied_dataset.dropna(inplace=True)
+    #     applied_prediction = self.apply_model(ensemble, applied_dataset, Y)
+    #
+    #     dataset = merge_dataframes([dummy_prediction,
+    #                                 sentiment_prediction,
+    #                                 bollinger_prediction,
+    #                                 applied_prediction,
+    #                                 baseline_prediction,
+    #                                 actuals])
+    #     dataset.columns = ['Dummy', 'Sentiment',
+    #                        'Technical',
+    #                        'Sentiment Technical',
+    #                        'Baseline', 'Actuals']
+    #     dataset.dropna(inplace=True)
+    #     return dataset
+
     def run_analysis(self):
         models = {'linear': LinearRegression(),
                   'rf': RandomForestRegressor(),
                   'gb': GradientBoostingRegressor(),
                   'lgbm': LGBMRegressor(),
-                  'xgb': XGBRegressor()}
+                  'xgb': XGBRegressor(),
+                  'mlp': MLPRegressor()}
 
         mae, mse = dict(), dict()
         for name, model in models.items():
