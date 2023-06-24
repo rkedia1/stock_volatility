@@ -29,14 +29,15 @@ from helpers import err_handle, merge_dataframes, remove_duplicate_index, time_s
 
 class EnsembleObjective(AnalysisTargets):
     applied_datasets = dict()
-    filename = 'applied_datasets.pkl'
 
-    def __init__(self):
+    def __init__(self, deviation_window: int=3):
+        self.deviation_window = deviation_window
         AnalysisTargets.__init__(self)
-        if not os.path.isfile(self.filename):
+        self.dataset_filename = f'pickles/applied_datasets_{self.deviation_window}.pkl'
+        if not os.path.isfile(self.dataset_filename):
             self.build()
         else:
-            with open(self.filename, 'rb') as handle:
+            with open(self.dataset_filename, 'rb') as handle:
                 self.applied_datasets = pickle.load(handle)
 
     @property
@@ -44,10 +45,10 @@ class EnsembleObjective(AnalysisTargets):
         return applied_list
 
     def build(self):
-        for stock in tqdm(self.stocks, desc='Building Datasets'):
-            self.applied_datasets[stock] = self.create_target_dataset(stock)
+        for stock in tqdm(self.stocks, desc=f'Building Datasets for window size {self.deviation_window}'):
+            self.applied_datasets[stock] = self.create_target_dataset(stock, self.deviation_window)
 
-        with open(self.filename, 'wb') as handle:
+        with open(self.dataset_filename, 'wb') as handle:
             pickle.dump(self.applied_datasets, handle)
 
 
@@ -74,8 +75,9 @@ class Model(EnsembleObjective):
 
     _sentiment_dataset = None
 
-    def __init__(self):
-        EnsembleObjective.__init__(self)
+    def __init__(self, deviation_window: int = 2):
+        EnsembleObjective.__init__(self, deviation_window=deviation_window)
+        self.result_filename = f'pickles/results_{deviation_window}.pkl'
 
     def create_model_datasets(self, objective: str or None = None,
                               y_shift: int = -2):
@@ -217,8 +219,10 @@ class Model(EnsembleObjective):
         i = 0
         results = {'mae': list(),
                    'mse': list()}
-        for xtrain, xtest, ytrain, ytest in time_series_split(X, Y):
-            print(i)
+
+        n_splits = 5
+        pbar = tqdm(total=n_splits, desc=model.__str__() + f' window_size: {self.deviation_window}')
+        for xtrain, xtest, ytrain, ytest in time_series_split(X, Y, n_splits):
             try:
                 xtrain = xtrain.loc[xtrain.index.isin(ytrain.index)]
                 ytrain = ytrain.loc[ytrain.index.isin(xtrain.index)]
@@ -233,7 +237,7 @@ class Model(EnsembleObjective):
                 results['mse'].append(mse)
             except Exception as e:
                 print(err_handle(e, __file__))
-            i += 1
+            pbar.update(1)
 
         print(model, results)
         results = {key: sum(vals) / len(vals) for key, vals in results.items()}
@@ -390,96 +394,25 @@ class Model(EnsembleObjective):
             model_results = self.create_datasets(model)
             print(name, model_results)
             results[name] = model_results
-            
-            with open('results.pkl', 'wb') as handle:
+
+            with open(self.result_filename, 'wb') as handle:
                 pickle.dump(results, handle)
-        # mae, mse = dict(), dict()
-        # for name, model in models.items():
-        #     print(name)
-        #     try:
-        #         mae[name], mse[name] = dict(), dict()
-        #         dataset = self.create_datasets(model)
-        #         for col in dataset.columns:
-        #             mae[name][col] = MAE(dataset[col], dataset['Actuals'])
-        #             mse[name][col] = MSE(dataset[col], dataset['Actuals'])
-        #     except Exception as e:
-        #         print(err_handle(e, __file__))
 
-        # return {'mae': mae, 'mse': mse}
+        table = self.create_results_table()
+        print(self.deviation_window, table)
 
-    #
-    #
-    # # def run_analysis(self, sentiment_data: dict = None):
-    # #     # no technical objective -> baseline model results
-    # #     datasets = self.create_model_datasets()
-    # #     X, Y = self.create_X_Y(datasets)
-    # #     baseline = self.simple_model(X.copy(), Y.copy())
-    # #
-    # #     dummy_datasets = self.create_model_datasets(y_shift=3)
-    # #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
-    # #
-    # #     actuals = baseline['ytest'].sort_index()
-    # #     actuals = remove_duplicate_index(actuals)
-    # #
-    # #     baseline_prediction = baseline['pred']
-    # #     baseline_prediction = remove_duplicate_index(baseline_prediction)
-    # #
-    # #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
-    # #     bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
-    # #
-    # #     sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
-    # #     sentiment_dataset.dropna(inplace=True)
-    # #     sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
-    # #
-    # #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
-    # #     applied_dataset.dropna(inplace=True)
-    # #     applied_prediction = self.simple_model(applied_dataset, Y)['pred']
-    # #
-    # #     adf = merge_dataframes([dummy_prediction,
-    # #                             sentiment_prediction,
-    # #                             bollinger_prediction,
-    # #                             applied_prediction,
-    # #                             baseline_prediction,
-    # #                             actuals])
-    # #     adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
-    # #     adf.dropna(inplace=True)
-    # #     for col in adf.columns:
-    # #         print(col)
-    # #         print(MAE(adf[col], adf['Actuals']))
-    #
-    #
-    #     feature_only = self.create_objective()
-    #
-    #
-    #     baseline_scores = self.evaluate_baseline(datasets)
-    #
-    #     X, Y = self.create_datasets()
-    #     baseline_data = self.simple_model(X, Y)
-    #
-    #     baseline_pred = baseline_data['pred'].resample('1d').mean()
-    #
-    #     # TODO
-    #     X, Y = self.create_datasets(additional_data)
-    #     advanced_data = self.simple_model(X, Y)
-    #
-    #     advanced_pred = advanced_data['pred'].resample('1d').mean()
-    #
-    #     target = Y.resample('1d').mean()
-    #     dataset = merge_dataframes([baseline_pred, advanced_pred, target]).dropna()
-    #
-    #     dataset.columns = ['Baseline', 'Sentiment', 'Deviation']
-    #     for col in dataset.columns:
-    #         print(col)
-    #         print(MAE(dataset[col], dataset['Deviation']))
-    #
-    #
-    #     #
-    #     #
-    #     # scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
-    #     # baseline_scores = self.evaluate_baseline(technical_datasets)
-    #     # improvement = self.determine_improvement(scores, baseline_scores)
-    #     #
-    #     # print(improvement)
+    @staticmethod
+    def create_results_table(data: dict):
+        datasets = list()
+        for model in data:
+            df = pd.DataFrame(pd.DataFrame(data[model]).T['mae'])
+            df.columns = [model]
+            datasets.append(df)
+
+        mae = merge_dataframes(datasets).T
+
+        return mae
+
 
     @staticmethod
     def determine_improvement(scoreset_a: dict, scoreset_b: dict) -> dict:
@@ -515,8 +448,12 @@ class Model(EnsembleObjective):
 
 
 if __name__ == '__main__':
-    m = Model()
-    m.run_analysis()
+    for window_size in range(2, 7):
+        try:
+            m = Model(window_size)
+            m.run_analysis()
+        except Exception as e:
+            print(err_handle(e, __file__))
 
     # TechnicalModel().run_analysis()
 
@@ -612,3 +549,92 @@ if __name__ == '__main__':
         # X = pd.concat(X)
         # Y = pd.concat(Y)
         # return X, Y
+
+
+# mae, mse = dict(), dict()
+# for name, model in models.items():
+#     print(name)
+#     try:
+#         mae[name], mse[name] = dict(), dict()
+#         dataset = self.create_datasets(model)
+#         for col in dataset.columns:
+#             mae[name][col] = MAE(dataset[col], dataset['Actuals'])
+#             mse[name][col] = MSE(dataset[col], dataset['Actuals'])
+#     except Exception as e:
+#         print(err_handle(e, __file__))
+
+# return {'mae': mae, 'mse': mse}
+
+#
+#
+# # def run_analysis(self, sentiment_data: dict = None):
+# #     # no technical objective -> baseline model results
+# #     datasets = self.create_model_datasets()
+# #     X, Y = self.create_X_Y(datasets)
+# #     baseline = self.simple_model(X.copy(), Y.copy())
+# #
+# #     dummy_datasets = self.create_model_datasets(y_shift=3)
+# #     _, dummy_prediction = self.create_X_Y(dummy_datasets)
+# #
+# #     actuals = baseline['ytest'].sort_index()
+# #     actuals = remove_duplicate_index(actuals)
+# #
+# #     baseline_prediction = baseline['pred']
+# #     baseline_prediction = remove_duplicate_index(baseline_prediction)
+# #
+# #     bollinger_X = self.create_objective(X.copy(), 'bollinger')
+# #     bollinger_prediction = self.simple_model(bollinger_X, Y.copy())['pred']
+# #
+# #     sentiment_dataset = self.apply_sentiment_data(X.copy(), sentiment_data)
+# #     sentiment_dataset.dropna(inplace=True)
+# #     sentiment_prediction = self.simple_model(sentiment_dataset, Y)['pred']
+# #
+# #     applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), sentiment_data)
+# #     applied_dataset.dropna(inplace=True)
+# #     applied_prediction = self.simple_model(applied_dataset, Y)['pred']
+# #
+# #     adf = merge_dataframes([dummy_prediction,
+# #                             sentiment_prediction,
+# #                             bollinger_prediction,
+# #                             applied_prediction,
+# #                             baseline_prediction,
+# #                             actuals])
+# #     adf.columns = ['Dummy', 'Sentiment', 'Bollinger', 'Applied', 'Baseline', 'Actuals']
+# #     adf.dropna(inplace=True)
+# #     for col in adf.columns:
+# #         print(col)
+# #         print(MAE(adf[col], adf['Actuals']))
+#
+#
+#     feature_only = self.create_objective()
+#
+#
+#     baseline_scores = self.evaluate_baseline(datasets)
+#
+#     X, Y = self.create_datasets()
+#     baseline_data = self.simple_model(X, Y)
+#
+#     baseline_pred = baseline_data['pred'].resample('1d').mean()
+#
+#     # TODO
+#     X, Y = self.create_datasets(additional_data)
+#     advanced_data = self.simple_model(X, Y)
+#
+#     advanced_pred = advanced_data['pred'].resample('1d').mean()
+#
+#     target = Y.resample('1d').mean()
+#     dataset = merge_dataframes([baseline_pred, advanced_pred, target]).dropna()
+#
+#     dataset.columns = ['Baseline', 'Sentiment', 'Deviation']
+#     for col in dataset.columns:
+#         print(col)
+#         print(MAE(dataset[col], dataset['Deviation']))
+#
+#
+#     #
+#     #
+#     # scores = {'MAE': MAE(ytest, pred), 'MSE': MSE(ytest, pred)}
+#     # baseline_scores = self.evaluate_baseline(technical_datasets)
+#     # improvement = self.determine_improvement(scores, baseline_scores)
+#     #
+#     # print(improvement)
