@@ -225,14 +225,9 @@ class Model(EnsembleObjective):
                 xtest = xtest.loc[xtest.index.isin(ytest.index)]
                 ytest = ytest.loc[ytest.index.isin(xtest.index)]
 
-                # this will be applied in most instances; unless we say DUMMY eg
-                if not isinstance(model, str):
-                    model.fit(xtrain, ytrain)
-                    pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
-                # upon being a string; we just assume the output is equal to the xtest (dummy output)
-                else:
-                    # in this instance; we are not applying a model and it is a dummy output
-                    pred = xtest
+                model.fit(xtrain, ytrain)
+                pred = pd.DataFrame(model.predict(xtest), index=xtest.index)
+
                 mae, mse = self.define_accuracy(pred, ytest)
                 results['mae'].append(mae)
                 results['mse'].append(mse)
@@ -307,32 +302,41 @@ class Model(EnsembleObjective):
 
         baseline_results = self.apply_model(ensemble, X.copy(), Y.copy())
 
-        dummy_datasets = self.create_model_datasets(y_shift=3)
-        _, dummy_prediction = self.create_X_Y(dummy_datasets)
-        dummy_results = self.evaluate_model('DUMMY', dummy_prediction, Y)
+        # dummy_datasets = self.create_model_datasets(y_shift=3)
+        # _, dummy_prediction = self.create_X_Y(dummy_datasets)
+        # dummy_results = self.evaluate_model('DUMMY', dummy_prediction, Y)
+
+        # avoiding having to run this each time; results are static
+        dummy_results = {'mae': .6813, 'mse': .8239}
 
         bollinger_X = self.create_objective(X.copy(), 'bollinger')
-        bollinger_prediction = self.apply_model(ensemble, bollinger_X, Y.copy())
+        bollinger_results = self.apply_model(ensemble, bollinger_X, Y.copy())
 
         sentiment_dataset = self.apply_sentiment_data(X.copy(), self.sentiment_dataset)
         sentiment_dataset.dropna(inplace=True)
-        sentiment_prediction = self.apply_model(ensemble, sentiment_dataset, Y)
+        sentiment_results = self.apply_model(ensemble, sentiment_dataset, Y)
 
         applied_dataset = self.apply_sentiment_data(bollinger_X.copy(), self.sentiment_dataset)
         applied_dataset.dropna(inplace=True)
-        applied_prediction = self.apply_model(ensemble, applied_dataset, Y)
+        combined_results = self.apply_model(ensemble, applied_dataset, Y)
 
-        dataset = merge_dataframes([dummy_prediction,
-                                    sentiment_prediction,
-                                    bollinger_prediction,
-                                    applied_prediction,
-                                    baseline_prediction,
-                                    actuals])
-        dataset.columns = ['Dummy', 'Sentiment',
-                           'Technical',
-                           'Sentiment Technical',
-                           'Baseline', 'Actuals']
-        dataset.dropna(inplace=True)
+        dataset = {'dummy': dummy_results,
+                   'baseline': baseline_results,
+                   'technical': bollinger_results,
+                   'sentiment': sentiment_results,
+                   'combined': combined_results}
+
+        # dataset = merge_dataframes([dummy_prediction,
+        #                             sentiment_prediction,
+        #                             bollinger_prediction,
+        #                             applied_prediction,
+        #                             baseline_prediction,
+        #                             actuals])
+        # dataset.columns = ['Dummy', 'Sentiment',
+        #                    'Technical',
+        #                    'Sentiment Technical',
+        #                    'Baseline', 'Actuals']
+        # dataset.dropna(inplace=True)
         return dataset
 
     # def create_datasets(self, ensemble: any):
@@ -381,19 +385,27 @@ class Model(EnsembleObjective):
                   'xgb': XGBRegressor(),
                   'mlp': MLPRegressor()}
 
-        mae, mse = dict(), dict()
+        results = dict()
         for name, model in models.items():
-            print(name)
-            try:
-                mae[name], mse[name] = dict(), dict()
-                dataset = self.create_datasets(model)
-                for col in dataset.columns:
-                    mae[name][col] = MAE(dataset[col], dataset['Actuals'])
-                    mse[name][col] = MSE(dataset[col], dataset['Actuals'])
-            except Exception as e:
-                print(err_handle(e, __file__))
+            model_results = self.create_datasets(model)
+            print(name, model_results)
+            results[name] = model_results
+            
+            with open('results.pkl', 'wb') as handle:
+                pickle.dump(results, handle)
+        # mae, mse = dict(), dict()
+        # for name, model in models.items():
+        #     print(name)
+        #     try:
+        #         mae[name], mse[name] = dict(), dict()
+        #         dataset = self.create_datasets(model)
+        #         for col in dataset.columns:
+        #             mae[name][col] = MAE(dataset[col], dataset['Actuals'])
+        #             mse[name][col] = MSE(dataset[col], dataset['Actuals'])
+        #     except Exception as e:
+        #         print(err_handle(e, __file__))
 
-        return {'mae': mae, 'mse': mse}
+        # return {'mae': mae, 'mse': mse}
 
     #
     #
