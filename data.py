@@ -2,30 +2,29 @@
 @author Evan McFall
 """
 
-import pandas as pd
-import numpy as np
-
-# from date.relativedelta import realativedelta
-import requests
-import os
-from tqdm import tqdm
-import sqlite3
-from snscrape.modules.twitter import TwitterSearchScraper, TwitterSearchScraperMode
-from datetime import date, timedelta
 import csv
-from yfinance import download as ydownload
-import yfinance as yf
-import yahooquery as yq
-from forex_python.converter import CurrencyRates
 import logging
-from nltk.sentiment import SentimentIntensityAnalyzer
+import os
+import sqlite3
 import warnings
+from datetime import date, timedelta
 
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from transformers.utils.logging import set_verbosity_info
+import nltk
+import numpy as np
+import pandas as pd
+import requests
 import torch
+import yahooquery as yq
+import yfinance as yf
+from forex_python.converter import CurrencyRates
+from nltk.sentiment import SentimentIntensityAnalyzer
+from snscrape.modules.twitter import TwitterSearchScraper, TwitterSearchScraperMode
+from tqdm import tqdm
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from yfinance import download as ydownload
 
 warnings.filterwarnings("ignore")
+nltk.download("vader_lexicon")
 
 
 class Equities(object):
@@ -390,6 +389,84 @@ class TwitterData(object):
                     f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False
                 )
 
+    def sentiment_vader_substitution(
+        self, folder: str = "tweets-with-sentiment-VADER-substituted"
+    ):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        tweets = self.get_tweets()
+        for symbol in tweets["symbol"].unique():
+            # import pdb; pdb.set_trace()
+            if not os.path.exists(f"{folder}/{symbol}.csv"):
+                ticker = tweets[tweets["symbol"] == symbol]
+                ticker["content"] = ticker["content"].str.replace(
+                    "bought puts", "doubt", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "buying puts", "doubting", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bought calls", "trust", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "buying calls", "trusting", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "call", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "put", "negative", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "long", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "shorting", "negative", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "short", "negative", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bullish", "optimistic", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bull", "optimist", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bearish", "pessimistic", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bear", "pessimist", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "buying", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "buy", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "bought", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "up", "positive", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "down", "negative", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "-", "negative ", case=False
+                )
+                ticker["content"] = ticker["content"].str.replace(
+                    "+", "positive ", case=False
+                )
+                analyzer = SentimentIntensityAnalyzer()
+                ticker["sentiment_score"] = ticker["content"].apply(
+                    lambda x: analyzer.polarity_scores(x)["compound"]
+                )
+                ticker.to_csv(
+                    f"{folder}/{symbol}.csv", quoting=csv.QUOTE_NONNUMERIC, index=False
+                )
+
     def average_sentiment(
         self, symbol: str, start=date(2022, 1, 1), end=date(2022, 12, 31)
     ):
@@ -589,7 +666,24 @@ class FinancialsData(object):
                         symbol=symbol
                     )
                     result = pd.concat([result, info])
-            result = result[['Description','Sector','Industry','asOfDate','DilutedEPS','NormalizedEBITDA','TotalRevenue','MarketCap','PriceYoY2021','PriceYoY2022','RevenueYoY2021','RevenueYoY2022','PeRatio', 'AvgSentiment2022']]
+            result = result[
+                [
+                    "Description",
+                    "Sector",
+                    "Industry",
+                    "asOfDate",
+                    "DilutedEPS",
+                    "NormalizedEBITDA",
+                    "TotalRevenue",
+                    "MarketCap",
+                    "PriceYoY2021",
+                    "PriceYoY2022",
+                    "RevenueYoY2021",
+                    "RevenueYoY2022",
+                    "PeRatio",
+                    "AvgSentiment2022",
+                ]
+            ]
             result.to_csv("symbol_fundamentals.csv")
         else:
             result = pd.read_csv("symbol_fundamentals.csv")
@@ -601,4 +695,5 @@ if __name__ == "__main__":
     TwitterData().get_tweets()
     TwitterData().sentiment_finbert()
     TwitterData().sentiment_vader()
+    TwitterData().sentiment_vader_substitution()
     FinancialsData().get_yfinance_data()
