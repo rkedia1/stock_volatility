@@ -167,11 +167,11 @@ equities/.DS_Store
 -------------------
 #reddit_stuff
 
-REDDIT_CLIENT_ID=_LYqCAq2rTb85eEHMeiOzQ
-REDDIT_CLIENT_SECRET=emQOKlPN7y0aeRFwZFUBKB-WmUAsnw
-REDDIT_USER_AGENT=Stock Sentiment API
-REDDIT_USERNAME=shudderisland098
-REDDIT_PASSWORD=sjikpnex973
+REDDIT_CLIENT_ID=########################
+REDDIT_CLIENT_SECRET=########################
+REDDIT_USER_AGENT=########################
+REDDIT_USERNAME=########################
+REDDIT_PASSWORD=########################
 
 
 # OTHER
