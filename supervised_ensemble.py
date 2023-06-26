@@ -80,7 +80,8 @@ class Model(EnsembleObjective):
         self.result_filename = f'pickles/results_{deviation_window}.pkl'
 
     def create_model_datasets(self, objective: str or None = None,
-                              y_shift: int = -2):
+                              y_shift: int = -2,
+                              equities: list or None = None):
         '''
         :param objective: if a technical indicator should be used it will pass into the loop
         :param y_shift: the number of intervals to shift x data forward
@@ -92,28 +93,31 @@ class Model(EnsembleObjective):
         :return:
         '''
         datasets = dict()
+        if equities is None:
+            equities = self.stocks.copy()
         for equity, dataset in self.applied_datasets.items():
-            if objective is not None:
-                dataset = self.create_objective(dataset, objective)
+            if equity in equities:
+                if objective is not None:
+                    dataset = self.create_objective(dataset, objective)
 
-            applied_features = [x for x in dataset.columns
-                                if any(feature in x for feature in ['feature_', 'Close'])]
-            dataset.dropna(inplace=True)
-            # TODO deviation rolling dependent shift feature test
+                applied_features = [x for x in dataset.columns
+                                    if any(feature in x for feature in ['feature_', 'Close'])]
+                dataset.dropna(inplace=True)
+                # TODO deviation rolling dependent shift feature test
 
-            X, Y = dataset[applied_features], dataset['Deviation'].shift(y_shift)
-            for col in applied_features:
-                X[col] = X[col].pct_change()
+                X, Y = dataset[applied_features], dataset['Deviation'].shift(y_shift)
+                for col in applied_features:
+                    X[col] = X[col].pct_change()
 
-            X.dropna(inplace=True)
-            Y.dropna(inplace=True)
-            X = X.loc[X.index.isin(Y.index)]
-            Y = Y.loc[Y.index.isin(X.index)]
+                X.dropna(inplace=True)
+                Y.dropna(inplace=True)
+                X = X.loc[X.index.isin(Y.index)]
+                Y = Y.loc[Y.index.isin(X.index)]
 
-            X.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in X.index]
-            Y.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in Y.index]
+                X.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in X.index]
+                Y.index = [f'{pd.Timestamp(x).strftime("%Y_%m_%d")}_{equity}' for x in Y.index]
 
-            datasets[equity] = {'X': X, 'Y': Y}
+                datasets[equity] = {'X': X, 'Y': Y}
         return datasets
 
     def create_objective(self, dataset: pd.DataFrame,
