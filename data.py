@@ -34,7 +34,7 @@ class Equities(object):
     sector_filename = "equities/sector.csv"
 
     # TODO secrets if for use in future
-    finnhub_api_key = "chrb7qhr01qkb63asu2gchrb7qhr01qkb63asu30"
+    finnhub_api_key = "########################"
 
     # temporary use case
     _consumer_stocks = None
