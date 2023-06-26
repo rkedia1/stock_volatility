@@ -15,9 +15,7 @@ from sklearn.metrics import (
 )
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-try:
-    from umap.umap_ import UMAP
-except: pass
+from umap.umap_ import UMAP
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -513,15 +511,16 @@ class ClusterFinancials(FinancialsData):
             groups = zip(self.labels, predicted_labels)
             return groups
 
-        def cluster_probabilities(self, max_iter: int = 100):
+        def cluster_probabilities(self, max_iter: int = 100, n_components = 4):
             gmm = GaussianMixture(
-                n_components=len(self.cluster_features),
+                n_components=n_components,
                 random_state=self.random_state,
                 max_iter=max_iter,
             ).fit(self.dimensions)
             probabilities = gmm.predict_proba(self.dimensions)
-            return probabilities
-
+            probabilities = list(map(lambda x: np.round(x,3), probabilities))
+            df = pd.DataFrame(probabilities, columns = [f'Component{i}' for i in range(len(probabilities[0]))], index = self.labels)
+            return df
         def ideal_cluster_num(self, max_clusters: int = 10):
             bics = []
             for i in range(1, max_clusters + 1):
