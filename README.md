@@ -10,4 +10,7 @@
 6. The unsupervised exploration and analysis can be found in `analysis_of_clusters.ipynb`, `cluster_analysis.ipynb`, and `cluster_techs.ipynb`
 7. The resulting clusters from our unsupervised analysis can be viewed directly in `stock_clusters.csv`
 
+The accompanying research paper can be found here: https://docs.google.com/document/d/1KJH70tmeiLoq8hG-6fAXh2CtyCIMfhFJy8x16HT7qxo/edit?usp=sharing
+
 ### For any questions, please contact a member of the project team.
+
